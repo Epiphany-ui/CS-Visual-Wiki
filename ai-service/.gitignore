@@ -21,3 +21,5 @@ temp_*.py
 # IDE配置
 .idea/
 .vscode/
+
+.env

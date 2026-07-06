@@ -21,10 +21,19 @@ if os.path.exists(miktex_path) and miktex_path not in os.environ["PATH"]:
     os.environ["PATH"] = miktex_path + os.pathsep + os.environ["PATH"]
 
 # ===================== 模型与 API 全局配置 =====================
+import os
+from dotenv import load_dotenv
+
+# 加载 .env 文件中的环境变量（优先级：已存在的系统环境变量 > .env 文件）
+load_dotenv()
+
+# 密钥从环境变量读取，如果未设置则报错退出（避免静默失败）
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+if not DEEPSEEK_API_KEY:
+    raise RuntimeError("未设置环境变量 DEEPSEEK_API_KEY，请检查 .env 文件或系统环境变量")
+
+CODER_MODEL_NAME = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_API_KEY = "sk-a1ae0c2504f84043bf7a558d957f17a9"
-# 优先用你原始可用的模型；如果还是空，换成 deepseek-coder 官方标准模型测试
-CODER_MODEL_NAME = "deepseek-v4-flash"
 LLM_TEMPERATURE: float = 0.1
 LLM_TOP_P: float = 0.85
 API_REQUEST_TIMEOUT: int = 180
