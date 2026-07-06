@@ -6,11 +6,11 @@ FastAPI 接口服务模块
 依赖：fastapi, uvicorn, pydantic, ai_engine
 创建日期：2026/7/6
 """
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 import uvicorn
 from typing import Optional
-
 # 导入核心AI引擎流水线
 from ai_engine import run_full_pipeline
 
@@ -27,15 +27,33 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# 标准化响应模型，自动生成接口文档字段
+class GenerateResponse(BaseModel):
+    """动画生成接口统一响应结构"""
+    success: bool = Field(..., description="任务是否执行成功")
+    code: str = Field("", description="最终生成的Manim代码")
+    video_path: str = Field("", description="渲染成功的视频文件相对路径")
+    try_count: int = Field(0, description="实际执行的尝试次数")
+    log: str = Field("", description="完整执行日志与错误信息")
 
 # ===================== 请求体模型 =====================
 class GenerateRequest(BaseModel):
-    """
-    动画生成接口请求体模型
-    """
-    user_input: str = Field(..., description="用户自然语言动画需求，必填项")
-    max_retry: Optional[int] = Field(DEFAULT_MAX_RETRY, description="最大失败重试次数，选填，默认3次")
+    """动画生成请求体模型"""
+    user_input: str = Field(..., description="用户自然语言动画需求，必填项", min_length=2)
+    max_retry: Optional[int] = Field(DEFAULT_MAX_RETRY, description="最大失败重试次数，范围1-10")
 
+    # 旧写法
+    # @validator("max_retry")
+
+    # 新写法（V2 标准，mode="after" 表示字段赋值后执行校验）
+    @field_validator("max_retry")
+    def check_retry_range(cls, v):
+        """校验重试次数范围，非法值自动降级为默认值"""
+        if v is None:
+            return DEFAULT_MAX_RETRY
+        if v < 1 or v > 10:
+            return DEFAULT_MAX_RETRY
+        return v
 
 # ===================== 健康检查接口 =====================
 @app.get("/health", summary="服务健康检查")
@@ -52,7 +70,11 @@ def health_check():
 
 
 # ===================== 核心生成接口 =====================
-@app.post("/generate", summary="Manim动画生成（自动生成+调试修复）")
+@app.post(
+    "/generate",
+    summary="Manim动画生成（自动生成+调试修复）",
+    response_model=GenerateResponse
+)
 def generate_animation(request: GenerateRequest):
     """
     根据用户自然语言需求，执行完整流水线生成Manim动画视频
@@ -87,22 +109,19 @@ def generate_animation(request: GenerateRequest):
 
 
 # ===================== 全局异常兜底处理器 =====================
+# 全局异常处理器修正（补充正确的500状态码，符合RESTful规范）
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """
-    全局异常捕获兜底，保证所有异常都返回标准格式响应，避免服务直接崩溃
-    :param request: 请求对象
-    :param exc: 异常实例
-    :return: 标准化错误结果
-    """
-    return {
-        "success": False,
-        "code": "",
-        "video_path": "",
-        "try_count": 0,
-        "log": f"服务全局异常：{str(exc)}"
-    }
-
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "success": False,
+            "code": "",
+            "video_path": "",
+            "try_count": 0,
+            "log": f"服务内部异常：{str(exc)}"
+        }
+    )
 
 # ===================== 服务启动入口 =====================
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ import requests
 import subprocess
 import chromadb
 from typing import List, Dict, Optional, Tuple
+# 顶部新增导入，用于提示词格式化
+import textwrap
 
 # ===================== 全局配置常量（可根据环境修改）=====================
 # === Ollama 大模型配置 ===
@@ -167,11 +169,10 @@ def generate_manim_code(user_requirement: str) -> Tuple[bool, str]:
     :param user_requirement: 用户自然语言动画需求
     :return: 元组(是否成功, 生成的代码/错误信息)
     """
-    # 1. 获取RAG参考资料
     references = rag_retrieve_references(user_requirement)
 
-    # 2. 构建强约束系统提示词（严格遵守项目语法、时长要求）
-    system_prompt = f"""
+    # 优化：使用dedent去除三引号缩进，提升提示词纯净度，避免干扰大模型
+    system_prompt = textwrap.dedent(f"""
     你是专业的Manim Community v0.18.0动画工程师，必须严格遵守以下规则：
     1. 仅使用Manim社区版标准语法，禁止使用第三方扩展库
     2. 代码必须完整可直接运行，必须定义继承Scene的类
@@ -181,9 +182,8 @@ def generate_manim_code(user_requirement: str) -> Tuple[bool, str]:
 
     参考资料：
     {references}
-    """
+    """)
 
-    # 3. 构建用户提示词
     user_prompt = f"请根据需求生成Manim动画代码：{user_requirement}"
 
     try:
@@ -261,7 +261,7 @@ def render_manim_animation(code_str: str) -> Tuple[bool, str, str]:
             text=True,
             timeout=RENDER_TIMEOUT,
             encoding="utf-8",
-            errors="ignore"
+            errors="replace"
         )
 
         # 5. 合并标准输出与错误输出为完整日志
@@ -397,6 +397,11 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
             fix_success, fix_result = fix_manim_code(current_code, render_log)
             if not fix_success:
                 all_logs.append(f"第{current_try}次修复失败：{fix_result}")
+                break
+
+            # 新增：修复后代码无变化，提前终止，避免无效死循环
+            if fix_result.strip() == current_code.strip():
+                all_logs.append(f"第{current_try}次修复后代码无变化，终止重试")
                 break
 
             current_code = fix_result
