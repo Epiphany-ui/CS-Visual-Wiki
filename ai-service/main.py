@@ -207,6 +207,26 @@ async def api_wiki_list(category: Optional[str] = None):
     return success_response({"items": items, "total": len(items)})
 
 
+@app.get("/api/wiki/search")
+async def api_wiki_search(q: str, limit: int = 10):
+    """关键词搜索词条（标题匹配）"""
+    if not WIKI_DATA_DIR.exists() or not q:
+        return success_response({"items": [], "total": 0})
+
+    q_lower = q.lower()
+    md_files = list(WIKI_DATA_DIR.rglob("*.md"))
+    items = []
+    for f in md_files:
+        meta = _parse_wiki_meta(f)
+        # 标题或标签包含关键词就匹配
+        if q_lower in meta["title"].lower() or q_lower in meta.get("tags", "").lower():
+            items.append(meta)
+        if len(items) >= limit:
+            break
+
+    return success_response({"items": items, "total": len(items), "keyword": q})
+
+
 @app.get("/api/wiki/{slug}")
 async def api_wiki_detail(slug: str):
     """获取单个词条详情（完整 Markdown 内容）"""
