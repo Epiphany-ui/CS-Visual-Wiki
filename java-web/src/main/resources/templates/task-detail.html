@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务详情 - Manim 动画生成系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">🎬 Manim 动画生成</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">首页</a>
+                <a class="nav-link" href="/tasks">历史任务</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">首页</a></li>
+                <li class="breadcrumb-item"><a href="/tasks">历史任务</a></li>
+                <li class="breadcrumb-item active" id="breadcrumbTask">任务详情</li>
+            </ol>
+        </nav>
+
+        <!-- 加载中提示 -->
+        <div id="loadingCard" class="card shadow">
+            <div class="card-body text-center py-5">
+                <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+                <p class="mt-3 text-muted">正在加载任务信息...</p>
+            </div>
+        </div>
+
+        <!-- 任务详情 -->
+        <div id="taskCard" class="card shadow d-none">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">🔍 任务 #<span id="taskId"></span></h4>
+                <span id="statusBadge" class="badge fs-6"></span>
+            </div>
+            <div class="card-body">
+                <!-- 需求描述 -->
+                <div class="mb-4">
+                    <h5>📌 需求描述</h5>
+                    <p id="userInput" class="bg-light p-3 rounded"></p>
+                </div>
+
+                <!-- 视频播放 -->
+                <div id="videoSection" class="mb-4 d-none">
+                    <h5>🎥 生成结果</h5>
+                    <div class="ratio ratio-16x9 bg-dark rounded">
+                        <video id="videoPlayer" controls>
+                            您的浏览器不支持视频播放
+                        </video>
+                    </div>
+                </div>
+
+                <!-- 生成中进度 -->
+                <div id="progressSection" class="mb-4 d-none">
+                    <div class="alert alert-info">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            <strong>⏳ 正在生成动画，请稍候...</strong>
+                        </div>
+                        <p class="mb-0 mt-2 text-muted small">系统正在生成代码并渲染视频，页面每 3 秒自动刷新状态</p>
+                    </div>
+                </div>
+
+                <!-- 失败提示 -->
+                <div id="failSection" class="mb-4 d-none">
+                    <div class="alert alert-danger">
+                        <strong>❌ 生成失败</strong>
+                    </div>
+                </div>
+
+                <!-- 信息表格 -->
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <strong>最大重试次数：</strong><span id="maxRetry"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <strong>实际重试次数：</strong><span id="tryCount"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <strong>创建时间：</strong><span id="createTime"></span>
+                    </div>
+                </div>
+
+                <!-- 错误日志 -->
+                <div id="errorSection" class="mb-4 d-none">
+                    <h5>⚠️ 错误日志</h5>
+                    <pre id="errorLog" class="bg-light p-3 rounded" style="max-height: 300px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                </div>
+
+                <!-- 生成的代码 -->
+                <div id="codeSection" class="mb-4 d-none">
+                    <h5>📄 生成的 Manim 代码</h5>
+                    <div class="d-flex justify-content-end mb-2">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="copyCode()">📋 复制代码</button>
+                    </div>
+                    <pre id="generatedCode" class="bg-dark text-light p-3 rounded"
+                         style="max-height: 400px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap;"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 获取任务 ID（从 URL 路径中）
+        const taskId = window.location.pathname.split('/').pop();
+
+        // 任务状态映射
+        const STATUS_MAP = {
+            0: { text: '等待中', class: 'bg-secondary' },
+            1: { text: '生成中', class: 'bg-primary' },
+            2: { text: '成功', class: 'bg-success' },
+            3: { text: '失败', class: 'bg-danger' }
+        };
+
+        let pollTimer = null;
+
+        async function fetchTaskStatus() {
+            try {
+                const resp = await fetch('/api/task/status/' + taskId);
+                const result = await resp.json();
+
+                if (result.code !== 200 || !result.data) {
+                    document.getElementById('loadingCard').innerHTML =
+                        '<div class="alert alert-danger m-3">❌ 任务不存在</div>';
+                    return;
+                }
+
+                renderTask(result.data);
+            } catch (err) {
+                document.getElementById('loadingCard').innerHTML =
+                    '<div class="alert alert-danger m-3">❌ 加载失败：' + err.message + '</div>';
+            }
+        }
+
+        function renderTask(task) {
+            // 隐藏加载中，显示主卡片
+            document.getElementById('loadingCard').classList.add('d-none');
+            document.getElementById('taskCard').classList.remove('d-none');
+
+            // 面包屑
+            document.getElementById('breadcrumbTask').textContent = '任务 #' + task.id;
+
+            // 基本信息
+            document.getElementById('taskId').textContent = task.id;
+            document.getElementById('userInput').textContent = task.userInput || '-';
+            document.getElementById('maxRetry').textContent = task.maxRetry != null ? task.maxRetry : '-';
+            document.getElementById('tryCount').textContent = task.tryCount != null ? task.tryCount : 0;
+            document.getElementById('createTime').textContent = task.createTime || '-';
+
+            // 状态徽标
+            const st = STATUS_MAP[task.status] || { text: '未知', class: 'bg-dark' };
+            const badge = document.getElementById('statusBadge');
+            badge.textContent = st.text;
+            badge.className = 'badge fs-6 ' + st.class;
+
+            // 各区块可见性
+            const videoSection = document.getElementById('videoSection');
+            const progressSection = document.getElementById('progressSection');
+            const failSection = document.getElementById('failSection');
+            const errorSection = document.getElementById('errorSection');
+            const codeSection = document.getElementById('codeSection');
+
+            // 重置所有区块
+            videoSection.classList.add('d-none');
+            progressSection.classList.add('d-none');
+            failSection.classList.add('d-none');
+            errorSection.classList.add('d-none');
+            codeSection.classList.add('d-none');
+
+            if (task.status === 2) {
+                // 成功：显示视频 + 代码
+                videoSection.classList.remove('d-none');
+                codeSection.classList.remove('d-none');
+                if (task.videoUrl) {
+                    // Python 服务返回的是相对路径 /videos/xxx.mp4，需拼接完整地址
+                    const videoBase = 'http://localhost:8000';
+                    document.getElementById('videoPlayer').src = videoBase + task.videoUrl;
+                }
+                if (task.generatedCode) {
+                    document.getElementById('generatedCode').textContent = task.generatedCode;
+                }
+                stopPolling();
+
+            } else if (task.status === 3) {
+                // 失败：显示错误 + 代码（如果有）
+                failSection.classList.remove('d-none');
+                codeSection.classList.remove('d-none');
+                if (task.errorLog) {
+                    errorSection.classList.remove('d-none');
+                    document.getElementById('errorLog').textContent = task.errorLog;
+                }
+                if (task.generatedCode) {
+                    document.getElementById('generatedCode').textContent = task.generatedCode;
+                }
+                stopPolling();
+
+            } else {
+                // 等待中/生成中：继续轮询
+                progressSection.classList.remove('d-none');
+                startPolling();
+            }
+        }
+
+        function startPolling() {
+            if (pollTimer) return;
+            pollTimer = setInterval(fetchTaskStatus, 3000);
+        }
+
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        function copyCode() {
+            const code = document.getElementById('generatedCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('✅ 代码已复制到剪贴板');
+            }).catch(() => {
+                alert('❌ 复制失败，请手动选中复制');
+            });
+        }
+
+        // 页面加载后立即查询
+        document.addEventListener('DOMContentLoaded', fetchTaskStatus);
+
+        // 页面离开时停止轮询
+        window.addEventListener('beforeunload', stopPolling);
+    </script>
+</body>
+</html>
