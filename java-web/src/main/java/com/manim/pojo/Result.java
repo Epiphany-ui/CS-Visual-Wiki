@@ -1,19 +1,25 @@
 package com.manim.pojo;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * 全局接口统一返回封装
  *
  * @param <T> 业务数据类型
  */
+@Schema(description = "统一响应结果")
 public class Result<T> {
 
     /** 响应码：200-成功，500-业务失败 */
+    @Schema(description = "响应码：200-成功，500-业务失败，401-未授权")
     private int code;
 
     /** 提示信息 */
+    @Schema(description = "提示信息")
     private String msg;
 
     /** 业务数据 */
+    @Schema(description = "业务数据")
     private T data;
 
     public Result() {

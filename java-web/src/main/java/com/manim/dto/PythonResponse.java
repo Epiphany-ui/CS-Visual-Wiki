@@ -1,27 +1,29 @@
 package com.manim.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Python AI 服务 /generate 接口返回数据 DTO
  */
+@Schema(description = "Python AI 服务响应结果")
 public class PythonResponse {
 
-    /** 是否生成成功 */
+    @Schema(description = "是否生成成功")
     private boolean success;
 
-    /** 生成的 Manim 代码 */
+    @Schema(description = "生成的 Manim 代码")
     private String code;
 
-    /** 视频访问路径 */
     @JsonProperty("video_path")
+    @Schema(description = "视频文件路径")
     private String videoPath;
 
-    /** 实际重试次数 */
     @JsonProperty("try_count")
+    @Schema(description = "实际重试次数")
     private int tryCount;
 
-    /** 执行日志 / 错误信息 */
+    @Schema(description = "执行日志 / 错误信息")
     private String log;
 
     // ===== getters & setters =====

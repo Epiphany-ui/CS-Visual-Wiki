@@ -3,6 +3,7 @@ package com.manim.pojo;
 import com.baomidou.mybatisplus.annotation.*;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 
@@ -14,22 +15,23 @@ import java.time.LocalDateTime;
  * </p>
  */
 @TableName("user")
+@Schema(description = "系统登录用户")
 public class User {
 
-    /** 用户id（INT自增） */
     @TableId(type = IdType.AUTO)
+    @Schema(description = "用户 ID")
     private Integer id;
 
-    /** 登录账号，唯一不可重复 */
+    @Schema(description = "登录账号（唯一不可重复）")
     private String username;
 
-    /** 登录密码（序列化时忽略，不返回给前端） */
     @JsonIgnore
+    @Schema(description = "登录密码（写入/校验用，响应不返回）")
     private String password;
 
-    /** 创建时间 */
     @TableField(fill = FieldFill.INSERT)
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Schema(description = "创建时间")
     private LocalDateTime createTime;
 
     // ===== getters & setters =====

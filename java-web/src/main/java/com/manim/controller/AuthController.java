@@ -7,6 +7,11 @@ import com.manim.service.UserService;
 import com.manim.utils.JwtUtil;
 import com.manim.utils.Md5Util;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -25,10 +30,17 @@ public class AuthController {
     @Autowired
     private UserService userService;
 
-    @Operation(summary = "用户注册")
+    @Operation(summary = "用户注册", description = "校验账号唯一性，MD5 加密密码入库，返回 JWT 令牌")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "注册成功，返回 token/username/userId"),
+            @ApiResponse(responseCode = "500", description = "业务失败（用户名重复、密码过短等）",
+                    content = @Content(schema = @Schema(implementation = Result.class)))
+    })
     @PostMapping("/register")
     public Result<Map<String, Object>> register(
+            @Parameter(description = "用户名（唯一，不可重复）", required = true)
             @RequestParam("username") String username,
+            @Parameter(description = "登录密码（不少于 6 位）", required = true)
             @RequestParam("password") String password) {
 
         if (username == null || username.trim().isEmpty()) {
@@ -62,10 +74,17 @@ public class AuthController {
         return Result.success("注册成功", data);
     }
 
-    @Operation(summary = "用户登录")
+    @Operation(summary = "用户登录", description = "校验用户名密码，成功返回 JWT 令牌")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "登录成功，返回 token/username/userId"),
+            @ApiResponse(responseCode = "500", description = "用户名或密码错误",
+                    content = @Content(schema = @Schema(implementation = Result.class)))
+    })
     @PostMapping("/login")
     public Result<Map<String, Object>> login(
+            @Parameter(description = "用户名", required = true)
             @RequestParam("username") String username,
+            @Parameter(description = "登录密码", required = true)
             @RequestParam("password") String password) {
 
         if (username == null || username.trim().isEmpty()) {

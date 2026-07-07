@@ -2,6 +2,7 @@ package com.manim.pojo;
 
 import com.baomidou.mybatisplus.annotation.*;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 
@@ -13,38 +14,36 @@ import java.time.LocalDateTime;
  * </p>
  */
 @TableName("task")
+@Schema(description = "动画生成任务")
 public class Task {
 
-    /** 任务主键ID（INT自增） */
     @TableId(type = IdType.AUTO)
+    @Schema(description = "任务主键 ID")
     private Integer id;
 
-    /** 所属用户id，关联 user 表 */
+    @Schema(description = "所属用户 ID，关联 user 表")
     private Integer userId;
 
-    /** 用户输入动画需求 */
+    @Schema(description = "用户输入动画需求")
     private String userInput;
 
-    /** 本地视频文件路径 */
+    @Schema(description = "本地视频文件路径")
     private String videoPath;
 
-    /**
-     * 任务状态
-     * 0-处理中，1-成功，2-失败
-     */
+    @Schema(description = "任务状态：0-处理中，1-成功，2-失败")
     private Integer status;
 
-    /** 失败错误日志 */
+    @Schema(description = "失败错误日志")
     private String errorLog;
 
-    /** 创建时间 */
     @TableField(fill = FieldFill.INSERT)
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Schema(description = "创建时间")
     private LocalDateTime createTime;
 
-    /** 更新时间 */
     @TableField(fill = FieldFill.INSERT_UPDATE)
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Schema(description = "更新时间")
     private LocalDateTime updateTime;
 
     // ===== getters & setters =====
