@@ -9,8 +9,12 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+import asyncio
+import json
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -27,6 +31,8 @@ from ai_engine import (
 
 # 导入外层扩展服务（不修改核心引擎）
 from services.template_service import template_service
+from services.prompt_service import prompt_service
+from services.progress_service import get_progress, subscribe_progress, unsubscribe_progress, list_videos, delete_video
 
 # ===================== FastAPI 应用初始化 =====================
 app = FastAPI(
@@ -324,6 +330,133 @@ async def api_template_reload():
     """开发用：热重载所有模板，无需重启服务"""
     template_service.reload_templates()
     return success_response(None, "模板重载完成")
+
+
+# ===================== Prompt 管理接口 =====================
+
+@app.get("/api/prompts/list")
+async def api_prompts_list():
+    """获取所有可用的 Prompt 模板列表"""
+    info = prompt_service.get_template_info()
+    return success_response({"items": info, "total": len(info)})
+
+
+@app.post("/api/prompts/reload")
+async def api_prompts_reload():
+    """开发用：热重载所有 Prompt 模板，修改 Prompt 文件后无需重启服务"""
+    prompt_service.reload()
+    return success_response(None, "Prompt 模板重载完成")
+
+
+@app.get("/api/prompts/{name}")
+async def api_prompts_detail(name: str):
+    """查看指定 Prompt 模板的渲染预览（用于调试 Prompt 效果）"""
+    try:
+        # 渲染预览时使用占位变量
+        preview_vars = {
+            "code_generation": {"max_animation_duration": 30, "references": "（预览模式：无RAG参考资料）"},
+            "code_fix": {"error_message": "（预览模式：模拟报错信息）"},
+        }
+        kwargs = preview_vars.get(name, {})
+        content = prompt_service.render(name, **kwargs)
+        return success_response({"name": name, "content": content})
+    except ValueError as e:
+        return error_response(str(e))
+
+
+# ===================== 任务进度与视频管理接口 =====================
+
+@app.get("/api/tasks/{task_id}")
+async def api_task_status(task_id: str):
+    """查询异步任务状态和结果"""
+    progress = get_progress(task_id)
+    # 如果 Redis 中找不到，尝试从 Celery 后端查询
+    if progress.get("state") == "UNKNOWN":
+        try:
+            from workers.celery_app import celery_app
+            result = celery_app.AsyncResult(task_id)
+            if result:
+                progress = {
+                    "task_id": task_id,
+                    "state": result.state,
+                    "progress": 100 if result.state == "SUCCESS" else 0,
+                    "message": "",
+                    "video_path": result.result.get("video_path", "") if result.result and isinstance(result.result, dict) else "",
+                    "log": result.result.get("log", "") if result.result and isinstance(result.result, dict) else "",
+                }
+        except Exception:
+            pass
+    return success_response(progress)
+
+
+@app.get("/api/tasks/{task_id}/stream")
+async def api_task_stream(task_id: str):
+    """SSE 实时进度推送，前端可用 EventSource 连接"""
+    async def event_generator():
+        pubsub = None
+        try:
+            # 先发送当前状态
+            current = get_progress(task_id)
+            yield f"data: {json.dumps(current, ensure_ascii=False)}\n\n"
+
+            # 如果任务已完成，直接结束
+            if current.get("state") in ("SUCCESS", "FAILURE"):
+                yield f"data: {json.dumps({'type': 'done', 'state': current.get('state')}, ensure_ascii=False)}\n\n"
+                return
+
+            # 订阅 Redis Pub/Sub，实时推送更新
+            pubsub = subscribe_progress(task_id)
+            while True:
+                message = pubsub.get_message(timeout=30)
+                if message and message["type"] == "message":
+                    data = message["data"]
+                    yield f"data: {data}\n\n"
+                    # 检查是否是终态
+                    try:
+                        parsed = json.loads(data)
+                        if parsed.get("state") in ("SUCCESS", "FAILURE"):
+                            yield f"data: {json.dumps({'type': 'done', 'state': parsed.get('state')}, ensure_ascii=False)}\n\n"
+                            break
+                    except Exception:
+                        pass
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if pubsub:
+                unsubscribe_progress(pubsub)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/api/videos/list")
+async def api_videos_list():
+    """列出所有已生成的视频文件"""
+    videos = list_videos()
+    return success_response({"items": videos, "total": len(videos)})
+
+
+@app.delete("/api/videos/{filename}")
+async def api_videos_delete(filename: str):
+    """删除指定视频及对应代码文件"""
+    # 安全校验：仅允许删除 .mp4 文件
+    if not filename.endswith(".mp4"):
+        return error_response("仅支持删除 .mp4 文件")
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return error_response("非法文件名")
+    deleted = delete_video(filename)
+    if deleted:
+        return success_response(None, f"已删除 {filename}")
+    return error_response(f"文件 {filename} 不存在")
+
 
 # ===================== 启动入口 =====================
 if __name__ == "__main__":

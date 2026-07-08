@@ -11,7 +11,6 @@ import hashlib
 import requests
 import subprocess
 import chromadb
-import textwrap
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
@@ -60,6 +59,16 @@ RENDER_TIMEOUT: int = 120
 
 CODE_BLOCK_PATTERN: str = r"```python\s*(.*?)\s*```|```\s*(.*?)\s*```"
 SCENE_CLASS_PATTERN: str = r"class\s+(\w+)\s*\(\s*Scene\s*\)"
+
+# 延迟导入 Prompt 服务，避免循环依赖和启动顺序问题
+_prompt_service = None
+
+def _get_prompt_service():
+    global _prompt_service
+    if _prompt_service is None:
+        from services.prompt_service import prompt_service
+        _prompt_service = prompt_service
+    return _prompt_service
 
 # ===================== 全局资源初始化 =====================
 try:
@@ -207,40 +216,12 @@ def rag_retrieve_references(user_query: str) -> str:
 
 def generate_manim_code(user_requirement: str) -> Tuple[bool, str]:
     references = rag_retrieve_references(user_requirement)
-    system_prompt = textwrap.dedent(f"""
-    ⚠️【最高优先级概念禁令】绝对禁止混淆傅里叶变换与傅里叶级数：
-    - 用户明确说「傅里叶变换」时，必须生成【时域非周期信号 + 连续频域频谱】的双坐标动画（例如矩形脉冲对应sinc函数频谱），必须体现时频对应关系，绝对禁止生成旋转圆圈/本轮/epicycle动画。
-    - 只有用户明确说「傅里叶级数」「本轮动画」「圆圈叠加」时，才可以使用旋转向量分解的形式。
-
-    你是Manim Community v0.18.0动画工程师，严格遵守以下核心规则：
-    1. 仅用Manim社区版标准语法，代码完整可运行，必须定义继承Scene的类
-    2. 动画总时长≤{MAX_ANIMATION_DURATION}秒，必须包含self.play()动画动作，禁止纯静态add
-    3. 仅输出```python包裹的代码块，不输出任何额外解释文字
-    4. 禁止循环内连续调用self.play，物理动画用add_updater配合self.wait实现
-    5. add_updater回调必须接收(mob, dt)两个参数，禁止在mob上挂载自定义属性，状态统一用ValueTracker
-    6. 禁止self.wait嵌套在self.play内，必须独立成行
-    7. 运动轨迹用TracedPath实现，禁止VGroup动态加点
-    8. 级数计算用循环累加+math.factorial，禁止递归lambda自引用
-    9. 禁止使用未定义target的MoveToTarget()，推荐用.animate语法
-    10. 所有可视化动画必须包含清晰的坐标轴与文字标注，禁止无坐标系的纯图形动画
-    
-    - 所有 Dot() 参数必须使用二维坐标，例如 Dot(point[:2])，严禁直接传入三维数组
-    - 整个动画渲染时间预估不超过 20 秒，避免大量循环或实时复杂计算
-
-    参考资料：
-    {references}
-    """)
-    # 在原有 system_prompt 末尾追加
-    system_prompt += textwrap.dedent("""
-        ⚠️【环境适配铁律】必须严格遵守：
-        1. 绝对禁止在 MathTex、Tex、get_axis_labels 等任何 LaTeX 上下文中使用中文、Unicode 字符（如 ω、σ、ϕ 等）。所有文本标签必须使用 Text()，公式中仅可使用英文、数字和标准 LaTeX 数学命令。
-        2. 动态更新的文本（如 n 值、样本数）必须使用 Text 对象，并在 updater 中直接修改其 .text 属性。禁止使用 .become() 或 .become(MathTex(...)) 重建对象，否则会导致闪烁和布局错乱。
-        3. 直方图/条形图的更新必须使用 stretch_to_fit_height(about_edge=DOWN) 或 set_height(stretch=True)，且不得每帧重新移动矩形底部位置。
-        4. 所有动画必须预计算数据（如不同 n 的直方图密度），不得在 updater 中实时生成大量随机数或调用 np.histogram，否则将严重超时。
-        5. 动画总时长严格控制在 25 秒以内，渲染预估不超过 60 秒。若需要展示 n 连续变化，必须使用预计算相邻 n 的直方图并通过线性插值过渡。
-        6. 坐标轴标签务必使用 axes.get_x_axis_label(Text("标签")) 或手动创建 Text，切勿传入中文字符串到 LaTeX 环境。
-    """)
-
+    # 从外部 Prompt 模板文件加载 System Prompt（支持热重载，修改即生效）
+    system_prompt = _get_prompt_service().render(
+        "code_generation",
+        max_animation_duration=MAX_ANIMATION_DURATION,
+        references=references,
+    )
     user_prompt = f"请根据需求生成Manim动画代码：{user_requirement}"
 
     messages = [
@@ -291,7 +272,13 @@ def preflight_code_check(code: str) -> bool:
     return True, ""
 
 
-def render_manim_animation(code_str: str) -> Tuple[bool, str, str]:
+def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool, str, str]:
+    """
+    渲染 Manim 动画代码，返回 (成功, 日志, 视频路径)
+    :param code_str: Manim Python 代码
+    :param progress_callback: 可选进度回调，签名为 callback(state, message)
+           state: 'started' | 'rendering' | 'success' | 'failed'
+    """
     task_id = uuid.uuid4().hex[:8]
     code_file_path = CODE_OUTPUT_SUBDIR / f"{task_id}.py"
     video_output_path = VIDEO_OUTPUT_SUBDIR / f"{task_id}.mp4"
@@ -313,52 +300,72 @@ def render_manim_animation(code_str: str) -> Tuple[bool, str, str]:
             "-o", str(video_output_path.absolute())
         ]
 
-        result = subprocess.run(
+        if progress_callback:
+            progress_callback("started", "Manim 渲染已启动...")
+
+        # 使用 Popen 逐行读取输出，支持进度回调
+        process = subprocess.Popen(
             render_command,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=RENDER_TIMEOUT,
             encoding="utf-8",
-            errors="replace"
+            errors="replace",
         )
 
-        full_log = f"=== 标准输出 ===\n{result.stdout}\n=== 错误输出 ===\n{result.stderr}"
+        stdout_lines = []
+        stderr_lines = []
 
-        if result.returncode == 0 and video_output_path.exists():
+        try:
+            # 逐行读取 stdout，非阻塞式获取渲染进度
+            for line in iter(process.stdout.readline, ""):
+                if not line:
+                    break
+                stdout_lines.append(line)
+                # Manim 每渲染一帧会输出类似 "Rendering xxx" 的行
+                if progress_callback and "Rendering" in line:
+                    progress_callback("rendering", line.strip())
+
+            # 读取剩余 stderr
+            stderr_text = process.stderr.read()
+            if stderr_text:
+                stderr_lines.append(stderr_text)
+
+            process.wait(timeout=RENDER_TIMEOUT)
+
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            if progress_callback:
+                progress_callback("failed", f"渲染超时（超过{RENDER_TIMEOUT}秒）")
+            return False, f"❌ 渲染超时（超过{RENDER_TIMEOUT}秒），进程已强制终止", ""
+
+        full_stdout = "".join(stdout_lines)
+        full_stderr = "".join(stderr_lines)
+        full_log = f"=== 标准输出 ===\n{full_stdout}\n=== 错误输出 ===\n{full_stderr}"
+
+        if process.returncode == 0 and video_output_path.exists():
             web_accessible_url = f"/videos/{task_id}.mp4"
+            if progress_callback:
+                progress_callback("success", web_accessible_url)
             return True, f"✅ 渲染成功\n{full_log}", web_accessible_url
         else:
-            return False, f"❌ 渲染失败，进程返回码：{result.returncode}\n{full_log}", ""
+            if progress_callback:
+                progress_callback("failed", f"进程返回码：{process.returncode}")
+            return False, f"❌ 渲染失败，进程返回码：{process.returncode}\n{full_log}", ""
 
-    except subprocess.TimeoutExpired:
-        return False, f"❌ 渲染超时（超过{RENDER_TIMEOUT}秒），进程已强制终止", ""
     except Exception as e:
+        if progress_callback:
+            progress_callback("failed", str(e))
         return False, f"❌ 渲染执行异常：{str(e)}", ""
 
 
 def fix_manim_code(original_code: str, error_message: str) -> Tuple[bool, str]:
-    system_prompt = textwrap.dedent(f"""
-    你是Manim Community v0.18.0调试工程师，严格遵守规则：
-    1. 保留原有动画功能，仅修复语法错误、导入缺失、API误用问题
-    2. 返回完整修复后代码，用```python代码块包裹，不输出额外解释
-    3. 必须包含self.play()动画动作，禁止纯静态add
-    4. 禁止循环内连续调用self.play，物理动画用add_updater配合self.wait
-    5. add_updater回调必须接收(mob, dt)，禁止mob自定义属性，用ValueTracker
-    6. self.wait必须独立成行，禁止嵌套在self.play内
-    7. 级数计算用循环累加+math.factorial，禁止递归lambda
-
-    报错信息：
-    {error_message}
-    """)
-
-    system_prompt += "\n重要：修复后代码必须能在 30 秒内完成渲染，禁止使用复杂循环或大量点集运算。"
-    system_prompt += textwrap.dedent("""
-        ⚠️【修复强制性约束】：
-        - 优先将中文文本标签从 MathTex/Tex 改为 Text()，避免 LaTeX 编译错误。
-        - 将动态标签的 .become() 调用替换为直接修改 .text 属性。
-        - 将直方图更新逻辑改为 stretch_to_fit_height，移除重复的 move_to 调用。
-        - 若错误为超时，需将耗时的实时计算改为预计算或大幅减少样本量。
-    """)
+    # 从外部 Prompt 模板文件加载 System Prompt（支持热重载，修改即生效）
+    system_prompt = _get_prompt_service().render(
+        "code_fix",
+        error_message=error_message,
+    )
     user_prompt = f"请修复以下Manim代码：\n```python\n{original_code}\n```"
 
     messages = [
