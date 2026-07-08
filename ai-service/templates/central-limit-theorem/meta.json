@@ -1,0 +1,54 @@
+{
+  "name": "正态分布与中心极限定理",
+  "description": "直观演示中心极限定理：无论原始分布是什么，多次抽样的均值都会趋近于正态分布，可调整样本量、抽样次数",
+  "category": "概率论",
+  "tags": ["中心极限定理", "正态分布", "概率论", "统计"],
+  "difficulty": "中等",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "distribution",
+      "label": "原始分布",
+      "type": "select",
+      "required": true,
+      "default": "uniform",
+      "description": "选择原始数据的分布类型",
+      "options": [
+        {"label": "均匀分布", "value": "uniform"},
+        {"label": "指数分布", "value": "exponential"},
+        {"label": "二项分布", "value": "binomial"}
+      ]
+    },
+    {
+      "name": "sample_size",
+      "label": "每组样本量",
+      "type": "integer",
+      "required": false,
+      "default": 1000,
+      "min": 100,
+      "max": 10000,
+      "description": "每次抽样的样本大小"
+    },
+    {
+      "name": "num_samples",
+      "label": "抽样次数",
+      "type": "integer",
+      "required": false,
+      "default": 1000,
+      "min": 100,
+      "max": 5000,
+      "description": "总共抽样的组数"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "description": "动画播放速度，数值越大越快"
+    }
+  ]
+}

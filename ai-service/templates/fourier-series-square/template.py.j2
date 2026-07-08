@@ -1,0 +1,77 @@
+from manim import *
+import numpy as np
+
+class FourierSeriesSquareWave(Scene):
+    def construct(self):
+        # 参数配置
+        NUM_TERMS = {{ num_terms }}
+        SHOW_COMPONENTS = {{ 'True' if show_components else 'False' }}
+        SPEED = {{ speed }}
+        RUN_TIME = 1 / SPEED
+
+        # 标题
+        title = Text(f"Fourier Series: Square Wave (N={NUM_TERMS})", font_size=32).to_edge(UP)
+        self.add(title)
+
+        # 坐标轴
+        axes = Axes(
+            x_range=[-np.pi, 3*np.pi, np.pi/2],
+            y_range=[-1.5, 1.5, 0.5],
+            x_length=10,
+            y_length=5,
+            axis_config={"color": WHITE},
+            tips=False
+        ).shift(DOWN * 0.3)
+        self.add(axes)
+
+        # 理想方波
+        def square_wave(x):
+            return np.sign(np.sin(x))
+        ideal_wave = axes.plot(square_wave, color=GRAY, stroke_width=2, stroke_opacity=0.5)
+        self.add(ideal_wave)
+        ideal_label = Text("Ideal Square Wave", font_size=20, color=GRAY).to_corner(UR)
+        self.add(ideal_label)
+
+        # 预计算傅里叶级数项
+        x = np.linspace(-np.pi, 3*np.pi, 1000)
+        components = []
+        colors = color_gradient([BLUE, GREEN, YELLOW, ORANGE, RED], NUM_TERMS)
+        total = np.zeros_like(x)
+
+        for n in range(1, NUM_TERMS + 1):
+            k = 2*n - 1  # 奇次谐波
+            y = (4/np.pi) * np.sin(k*x) / k
+            components.append((k, y, colors[n-1]))
+            total += y
+
+        # 显示各分量（如果开启）
+        component_graphs = VGroup()
+        if SHOW_COMPONENTS:
+            for k, y, color in components:
+                graph = axes.plot_line_graph(x, y, add_vertex_dots=False, line_color=color, stroke_width=1.5, stroke_opacity=0.6)
+                component_graphs.add(graph)
+            self.play(FadeIn(component_graphs), run_time=RUN_TIME)
+
+        # 逐步叠加
+        current_sum = np.zeros_like(x)
+        sum_graph = axes.plot_line_graph(x, current_sum, add_vertex_dots=False, line_color=RED, stroke_width=4)
+        self.add(sum_graph)
+        term_text = Text("Terms: 0", font_size=24).to_corner(UL)
+        self.add(term_text)
+
+        for idx, (k, y, color) in enumerate(components):
+            current_sum += y
+            new_graph = axes.plot_line_graph(x, current_sum, add_vertex_dots=False, line_color=RED, stroke_width=4)
+            new_term_text = Text(f"Terms: {idx+1}", font_size=24).to_corner(UL)
+            self.play(
+                Transform(sum_graph, new_graph),
+                Transform(term_text, new_term_text),
+                run_time=RUN_TIME
+            )
+            self.wait(RUN_TIME * 0.5)
+
+        # 最终结果标注
+        final_label = Text(f"Approximation with {NUM_TERMS} terms", font_size=20, color=RED).next_to(ideal_label, DOWN, aligned_edge=RIGHT)
+        self.play(Write(final_label), run_time=1)
+
+        self.wait(1)

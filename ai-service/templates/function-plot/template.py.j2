@@ -1,0 +1,71 @@
+from manim import *
+import numpy as np
+
+class FunctionPlot(Scene):
+    def construct(self):
+        # 参数配置
+        FUNC_EXPR = "{{ function_expr }}"
+        X_MIN = {{ x_min }}
+        X_MAX = {{ x_max }}
+        Y_MIN = {{ y_min }}
+        Y_MAX = {{ y_max }}
+        SHOW_GRID = {{ 'True' if show_grid else 'False' }}
+        SHOW_ANIMATION = {{ 'True' if show_animation else 'False' }}
+
+        # 标题
+        title = Text(f"y = {FUNC_EXPR.replace('np.', '')}", font_size=36).to_edge(UP)
+        self.add(title)
+
+        # 创建坐标系
+        axes = Axes(
+            x_range=[X_MIN, X_MAX, 1],
+            y_range=[Y_MIN, Y_MAX, 1],
+            x_length=10,
+            y_length=6,
+            axis_config={"color": WHITE},
+            tips=False
+        )
+        # 坐标轴标签
+        x_label = Text("x", font_size=24).next_to(axes.x_axis.get_end(), RIGHT)
+        y_label = Text("y", font_size=24).next_to(axes.y_axis.get_end(), UP)
+
+        # 网格
+        grid = VGroup()
+        if SHOW_GRID:
+            # 竖线
+            for x in np.arange(X_MIN, X_MAX + 1, 1):
+                line = Line(
+                    axes.c2p(x, Y_MIN),
+                    axes.c2p(x, Y_MAX),
+                    stroke_color=GRAY,
+                    stroke_opacity=0.3
+                )
+                grid.add(line)
+            # 横线
+            for y in np.arange(Y_MIN, Y_MAX + 1, 1):
+                line = Line(
+                    axes.c2p(X_MIN, y),
+                    axes.c2p(X_MAX, y),
+                    stroke_color=GRAY,
+                    stroke_opacity=0.3
+                )
+                grid.add(line)
+
+        self.add(grid, axes, x_label, y_label)
+
+        # 绘制函数
+        func = lambda x: {{ function_expr }}
+        graph = axes.plot(func, color=BLUE, stroke_width=3)
+
+        if SHOW_ANIMATION:
+            self.play(Create(graph), run_time=2)
+        else:
+            self.add(graph)
+
+        # 标记关键点（可选，简单标记原点）
+        dot = Dot(axes.c2p(0, 0), color=RED)
+        self.add(dot)
+        zero_label = Text("O", font_size=20).next_to(dot, DL, buff=0.1)
+        self.add(zero_label)
+
+        self.wait(1)

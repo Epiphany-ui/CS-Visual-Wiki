@@ -25,6 +25,9 @@ from ai_engine import (
     CODE_OUTPUT_SUBDIR,
 )
 
+# 导入外层扩展服务（不修改核心引擎）
+from services.template_service import template_service
+
 # ===================== FastAPI 应用初始化 =====================
 app = FastAPI(
     title="CS Visual Wiki AI Service",
@@ -69,6 +72,16 @@ class RetrieveRequest(BaseModel):
     """RAG 检索参考资料"""
     query: str
     top_k: int = 2
+
+class TemplateGenerateCodeRequest(BaseModel):
+    """模板生成代码请求"""
+    template_id: str
+    params: dict = {}
+
+class TemplateRenderRequest(BaseModel):
+    """模板渲染请求：生成代码+渲染视频"""
+    template_id: str
+    params: dict = {}
 
 # ===================== 统一响应格式 =====================
 def success_response(data: dict, message: str = "ok") -> dict:
@@ -254,6 +267,63 @@ async def api_wiki_detail(slug: str):
         "meta": meta,
         "content": content,
     })
+
+# ===================== 模板相关接口（零代码创作） =====================
+@app.get("/api/templates/categories")
+async def api_template_categories():
+    """获取所有模板分类"""
+    categories = template_service.get_categories()
+    return success_response({"categories": categories})
+
+
+@app.get("/api/templates/list")
+async def api_template_list(category: Optional[str] = None):
+    """获取模板列表，可按分类筛选"""
+    items = template_service.get_template_list(category=category)
+    return success_response({"items": items, "total": len(items)})
+
+
+@app.get("/api/templates/{template_id}")
+async def api_template_detail(template_id: str):
+    """获取模板详情（包含参数说明）"""
+    success, data = template_service.get_template_detail(template_id)
+    if not success:
+        return error_response(data)
+    return success_response(data)
+
+
+@app.post("/api/templates/generate-code")
+async def api_template_generate_code(req: TemplateGenerateCodeRequest):
+    """根据模板参数生成Manim代码，不执行渲染"""
+    success, result = template_service.render_template_code(req.template_id, req.params)
+    if not success:
+        return error_response(result)
+    return success_response({"code": result}, "代码生成成功")
+
+
+@app.post("/api/templates/render")
+async def api_template_render(req: TemplateRenderRequest):
+    """根据模板参数生成代码并直接渲染视频（零代码入口）"""
+    # 1. 模板渲染生成代码
+    gen_success, code = template_service.render_template_code(req.template_id, req.params)
+    if not gen_success:
+        return error_response(f"模板生成代码失败：{code}")
+    # 2. 调用核心引擎渲染
+    render_success, log, video_path = render_manim_animation(code)
+    data = {
+        "success": render_success,
+        "code": code,
+        "log": log,
+        "video_path": video_path,
+    }
+    return success_response(data, "渲染完成" if render_success else "渲染失败")
+
+
+@app.post("/api/templates/reload")
+async def api_template_reload():
+    """开发用：热重载所有模板，无需重启服务"""
+    template_service.reload_templates()
+    return success_response(None, "模板重载完成")
 
 # ===================== 启动入口 =====================
 if __name__ == "__main__":

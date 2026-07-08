@@ -1,0 +1,54 @@
+{
+  "name": "排序算法可视化",
+  "description": "直观展示各类排序算法的执行过程，支持调整数组大小、动画速度，可选择冒泡/选择/插入/快速/归并排序",
+  "category": "算法",
+  "tags": ["排序", "算法", "数据结构"],
+  "difficulty": "入门",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "algorithm",
+      "label": "排序算法",
+      "type": "select",
+      "required": true,
+      "default": "bubble",
+      "description": "选择要演示的排序算法",
+      "options": [
+        {"label": "冒泡排序", "value": "bubble"},
+        {"label": "选择排序", "value": "selection"},
+        {"label": "插入排序", "value": "insertion"},
+        {"label": "快速排序", "value": "quick"},
+        {"label": "归并排序", "value": "merge"}
+      ]
+    },
+    {
+      "name": "array_size",
+      "label": "数组大小",
+      "type": "integer",
+      "required": false,
+      "default": 10,
+      "min": 5,
+      "max": 20,
+      "description": "待排序数组的元素个数"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 3.0,
+      "description": "动画播放速度，数值越大越快"
+    },
+    {
+      "name": "show_values",
+      "label": "显示数值",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否在柱子上显示具体数值"
+    }
+  ]
+}

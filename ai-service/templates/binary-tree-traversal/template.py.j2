@@ -1,0 +1,143 @@
+from manim import *
+import random
+from collections import deque
+
+class BinaryTreeTraversal(Scene):
+    def construct(self):
+        # 参数配置
+        TRAVERSAL_TYPE = "{{ traversal_type }}"
+        TREE_DEPTH = {{ tree_depth }}
+        SPEED = {{ speed }}
+        SHOW_VALUES = {{ 'True' if show_values else 'False' }}
+        RUN_TIME = 0.8 / SPEED
+
+        # 标题
+        title_map = {
+            "preorder": "Preorder Traversal (Root-Left-Right)",
+            "inorder": "Inorder Traversal (Left-Root-Right)",
+            "postorder": "Postorder Traversal (Left-Right-Root)",
+            "levelorder": "Level Order Traversal (BFS)"
+        }
+        title = Text(title_map[TRAVERSAL_TYPE], font_size=32).to_edge(UP)
+        self.add(title)
+
+        # 生成满二叉树节点
+        random.seed(42)
+        nodes = {}
+        edges = VGroup()
+        node_radius = 0.3
+        level_height = 1.2
+        total_width = 8
+
+        # 构建节点位置
+        for depth in range(TREE_DEPTH + 1):
+            num_nodes = 2 ** depth
+            level_y = 2 - depth * level_height
+            spacing = total_width / (num_nodes + 1)
+            for i in range(num_nodes):
+                node_id = (depth, i)
+                x = -total_width/2 + (i + 1) * spacing
+                pos = [x, level_y, 0]
+                val = random.randint(1, 99)
+                # 创建节点圆
+                circle = Circle(radius=node_radius, color=WHITE, fill_color=BLUE_D, fill_opacity=0.8)
+                circle.move_to(pos)
+                # 节点值
+                val_text = Text(str(val), font_size=20).move_to(pos) if SHOW_VALUES else VMobject()
+                nodes[node_id] = (circle, val_text, val)
+
+        # 构建边
+        for depth in range(TREE_DEPTH):
+            for i in range(2 ** depth):
+                parent_id = (depth, i)
+                left_child = (depth + 1, 2*i)
+                right_child = (depth + 1, 2*i + 1)
+                # 父节点到左孩子
+                edge1 = Line(
+                    nodes[parent_id][0].get_bottom(),
+                    nodes[left_child][0].get_top(),
+                    color=GRAY
+                )
+                edges.add(edge1)
+                # 父节点到右孩子
+                edge2 = Line(
+                    nodes[parent_id][0].get_bottom(),
+                    nodes[right_child][0].get_top(),
+                    color=GRAY
+                )
+                edges.add(edge2)
+
+        # 添加所有元素
+        self.add(edges)
+        for (circle, text, val) in nodes.values():
+            self.add(circle)
+            if SHOW_VALUES:
+                self.add(text)
+        self.wait(0.5)
+
+        # 遍历顺序列表
+        traversal_order = []
+
+        def visit(node_id):
+            """访问节点，变色，记录顺序"""
+            circle, text, val = nodes[node_id]
+            traversal_order.append(val)
+            self.play(
+                circle.animate.set_fill(YELLOW, opacity=1),
+                run_time=RUN_TIME
+            )
+            self.wait(RUN_TIME * 0.5)
+            self.play(
+                circle.animate.set_fill(GREEN, opacity=0.8),
+                run_time=RUN_TIME * 0.5
+            )
+
+        # 前序遍历
+        if TRAVERSAL_TYPE == "preorder":
+            def preorder(depth, i):
+                if depth > TREE_DEPTH:
+                    return
+                visit((depth, i))
+                preorder(depth + 1, 2*i)
+                preorder(depth + 1, 2*i + 1)
+            preorder(0, 0)
+
+        # 中序遍历
+        elif TRAVERSAL_TYPE == "inorder":
+            def inorder(depth, i):
+                if depth > TREE_DEPTH:
+                    return
+                inorder(depth + 1, 2*i)
+                visit((depth, i))
+                inorder(depth + 1, 2*i + 1)
+            inorder(0, 0)
+
+        # 后序遍历
+        elif TRAVERSAL_TYPE == "postorder":
+            def postorder(depth, i):
+                if depth > TREE_DEPTH:
+                    return
+                postorder(depth + 1, 2*i)
+                postorder(depth + 1, 2*i + 1)
+                visit((depth, i))
+            postorder(0, 0)
+
+        # 层序遍历
+        elif TRAVERSAL_TYPE == "levelorder":
+            q = deque()
+            q.append((0, 0))
+            while q:
+                depth, i = q.popleft()
+                if depth > TREE_DEPTH:
+                    continue
+                visit((depth, i))
+                q.append((depth + 1, 2*i))
+                q.append((depth + 1, 2*i + 1))
+
+        # 显示遍历结果
+        result_text = Text(
+            f"Result: {' → '.join(map(str, traversal_order))}",
+            font_size=28
+        ).to_edge(DOWN)
+        self.play(Write(result_text), run_time=1)
+        self.wait(1)
