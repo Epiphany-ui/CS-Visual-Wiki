@@ -1,0 +1,51 @@
+{
+  "name": "Dijkstra 最短路径",
+  "description": "可视化 Dijkstra 算法在加权图中寻找单源最短路径的完整过程，展示节点标记、距离更新、最短路径高亮",
+  "category": "图论",
+  "tags": ["图论", "最短路径", "Dijkstra", "算法"],
+  "difficulty": "中等",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "graph_type",
+      "label": "图类型",
+      "type": "select",
+      "required": true,
+      "default": "grid",
+      "description": "选择演示的图结构",
+      "options": [
+        {"label": "网格图 (4×3)", "value": "grid"},
+        {"label": "随机连通图 (6节点)", "value": "random"}
+      ]
+    },
+    {
+      "name": "start_node",
+      "label": "起点编号",
+      "type": "integer",
+      "required": false,
+      "default": 0,
+      "min": 0,
+      "max": 11,
+      "description": "Dijkstra 算法的起始节点编号"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 3.0,
+      "description": "动画播放速度"
+    },
+    {
+      "name": "show_distances",
+      "label": "显示距离标签",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否在节点旁显示当前最短距离"
+    }
+  ]
+}

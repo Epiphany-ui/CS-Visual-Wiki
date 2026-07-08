@@ -1,0 +1,54 @@
+{
+  "name": "梯度下降可视化",
+  "description": "动态展示梯度下降算法在一元和二元函数上的优化过程，直观理解学习率、迭代方向与收敛",
+  "category": "机器学习",
+  "tags": ["梯度下降", "优化", "机器学习", "数学"],
+  "difficulty": "中等",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "function_type",
+      "label": "函数类型",
+      "type": "select",
+      "required": true,
+      "default": "quadratic",
+      "description": "选择要优化的目标函数",
+      "options": [
+        {"label": "一元二次 f(x)=x²", "value": "quadratic"},
+        {"label": "二元二次 f(x,y)=x²+y²", "value": "2d-quadratic"},
+        {"label": "Rosenbrock 函数", "value": "rosenbrock"}
+      ]
+    },
+    {
+      "name": "learning_rate",
+      "label": "学习率",
+      "type": "number",
+      "required": false,
+      "default": 0.1,
+      "min": 0.01,
+      "max": 0.5,
+      "description": "梯度下降的学习率（步长）"
+    },
+    {
+      "name": "iterations",
+      "label": "迭代次数",
+      "type": "integer",
+      "required": false,
+      "default": 10,
+      "min": 5,
+      "max": 30,
+      "description": "梯度下降的迭代步数"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 3.0,
+      "description": "动画播放速度"
+    }
+  ]
+}

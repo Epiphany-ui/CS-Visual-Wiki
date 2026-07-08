@@ -13,6 +13,13 @@ import asyncio
 import json
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+
+from services.logging_config import setup_logging, get_logger
+
+# 初始化日志（在所有导入之后，确保所有模块受益）
+setup_logging()
+logger = get_logger("main")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -166,6 +173,77 @@ async def api_rag_retrieve(req: RetrieveRequest):
 # ===================== 百科词条接口 =====================
 WIKI_DATA_DIR = Path(__file__).resolve().parent / "wiki_data"
 
+# 全局词条索引（标题→slug），用于自动生成超链接和相关推荐
+_wiki_title_index: dict = {}
+_index_loaded: bool = False
+
+
+def _load_wiki_index():
+    """构建全局词条索引：{标题: slug} + {slug: meta}"""
+    global _wiki_title_index, _index_loaded
+    if _index_loaded:
+        return
+    if not WIKI_DATA_DIR.exists():
+        _index_loaded = True
+        return
+    for f in WIKI_DATA_DIR.rglob("*.md"):
+        meta = _parse_wiki_meta(f)
+        title = meta.get("title", "")
+        slug = meta.get("slug", "")
+        if title and slug:
+            _wiki_title_index[title] = slug
+            # 也加入拼音/英文别名（从 tags 中提取）
+            tags = meta.get("tags", "")
+            for tag in tags.split(","):
+                tag = tag.strip()
+                if tag and tag != title:
+                    _wiki_title_index[tag] = slug
+    _index_loaded = True
+
+
+def _auto_link_content(content: str, current_slug: str) -> str:
+    """将正文中提到的其他词条标题自动替换为 Markdown 超链接"""
+    _load_wiki_index()
+    # 按标题长度降序排序，优先匹配长标题（避免 "排序" 误匹配 "快速排序"）
+    titles = sorted(_wiki_title_index.keys(), key=len, reverse=True)
+    for title in titles:
+        target_slug = _wiki_title_index[title]
+        if target_slug == current_slug:
+            continue  # 不链接到自己
+        if title in content:
+            # 只在正文段落中替换，不在已有的链接或代码块中替换
+            # 简单策略：替换第一个出现
+            link = f"[{title}](/api/wiki/{target_slug})"
+            content = content.replace(title, link, 1)  # 每篇最多链接一次
+    return content
+
+
+def _get_related_articles(current_slug: str, current_tags: str, limit: int = 5) -> list:
+    """基于标签重叠获取相关词条推荐"""
+    _load_wiki_index()
+    if not current_tags:
+        return []
+
+    current_tag_set = set(t.strip().lower() for t in current_tags.split(",") if t.strip())
+    scored = []
+
+    for f in WIKI_DATA_DIR.rglob("*.md"):
+        if f.stem == current_slug:
+            continue
+        meta = _parse_wiki_meta(f)
+        other_tags = set(t.strip().lower() for t in meta.get("tags", "").split(",") if t.strip())
+        overlap = len(current_tag_set & other_tags)
+        if overlap > 0:
+            scored.append((overlap, {
+                "slug": meta["slug"],
+                "title": meta["title"],
+                "category": meta["category"],
+                "difficulty": meta["difficulty"],
+            }))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item for _, item in scored[:limit]]
+
 
 def _parse_wiki_meta(file_path: Path) -> dict:
     """轻量解析词条 meta 信息（只解析头部，不读全文）"""
@@ -248,7 +326,7 @@ async def api_wiki_search(q: str, limit: int = 10):
 
 @app.get("/api/wiki/{slug}")
 async def api_wiki_detail(slug: str):
-    """获取单个词条详情（完整 Markdown 内容）"""
+    """获取单个词条详情（含自动超链接 + 相关词条推荐）"""
     if not WIKI_DATA_DIR.exists():
         raise HTTPException(status_code=404, detail="词条目录不存在")
 
@@ -262,17 +340,34 @@ async def api_wiki_detail(slug: str):
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 去掉 meta 块，只返回正文
+    # 去掉 meta 块
     if content.startswith("<!-- meta"):
         end_idx = content.find("-->")
         if end_idx != -1:
             content = content[end_idx + 3:].strip()
 
+    # 自动生成文中其他词条的超链接（Wikipedia 风格）
+    content = _auto_link_content(content, slug)
+
+    # 基于标签重叠获取相关词条推荐
+    related = _get_related_articles(slug, meta.get("tags", ""))
+
     return success_response({
         "slug": slug,
         "meta": meta,
         "content": content,
+        "related": related,
     })
+
+@app.post("/api/wiki/reload-index")
+async def api_wiki_reload_index():
+    """重建词条索引（新增词条后调用，无需重启服务）"""
+    global _index_loaded
+    _wiki_title_index.clear()
+    _index_loaded = False
+    _load_wiki_index()
+    return success_response({"index_size": len(_wiki_title_index)}, "索引已重建")
+
 
 # ===================== 模板相关接口（零代码创作） =====================
 @app.get("/api/templates/categories")
@@ -447,7 +542,6 @@ async def api_videos_list():
 @app.delete("/api/videos/{filename}")
 async def api_videos_delete(filename: str):
     """删除指定视频及对应代码文件"""
-    # 安全校验：仅允许删除 .mp4 文件
     if not filename.endswith(".mp4"):
         return error_response("仅支持删除 .mp4 文件")
     if ".." in filename or "/" in filename or "\\" in filename:
@@ -456,6 +550,72 @@ async def api_videos_delete(filename: str):
     if deleted:
         return success_response(None, f"已删除 {filename}")
     return error_response(f"文件 {filename} 不存在")
+
+
+# ===================== 导出与下载 =====================
+
+@app.get("/api/videos/{filename}/download")
+async def api_videos_download(filename: str):
+    """直接下载视频文件"""
+    if not filename.endswith(".mp4"):
+        return error_response("仅支持下载 .mp4 文件")
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return error_response("非法文件名")
+
+    video_path = VIDEO_OUTPUT_SUBDIR / filename
+    if not video_path.exists():
+        return error_response(f"视频 {filename} 不存在")
+
+    return FileResponse(
+        path=str(video_path),
+        media_type="video/mp4",
+        filename=filename,
+    )
+
+
+@app.post("/api/videos/{filename}/convert/gif")
+async def api_videos_convert_gif(filename: str, fps: int = 10, width: int = 480):
+    """将视频转换为 GIF（需要 ffmpeg）"""
+    if not filename.endswith(".mp4"):
+        return error_response("仅支持转换 .mp4 文件")
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return error_response("非法文件名")
+
+    video_path = VIDEO_OUTPUT_SUBDIR / filename
+    if not video_path.exists():
+        return error_response(f"视频 {filename} 不存在")
+
+    gif_name = filename.replace(".mp4", ".gif")
+    gif_path = VIDEO_OUTPUT_SUBDIR / gif_name
+
+    try:
+        import subprocess
+        # ffmpeg -i input.mp4 -vf "fps=10,scale=480:-1" output.gif
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(video_path),
+                "-vf", f"fps={fps},scale={width}:-1:flags=lanczos",
+                "-loop", "0",
+                str(gif_path),
+            ],
+            capture_output=True, text=True, timeout=60,
+            encoding="utf-8", errors="replace",
+        )
+        if result.returncode == 0 and gif_path.exists():
+            size = round(gif_path.stat().st_size / 1024, 1)
+            return success_response({
+                "filename": gif_name,
+                "url": f"/videos/{gif_name}",
+                "size_kb": size,
+            }, f"GIF 转换完成（{size}KB）")
+        else:
+            logger.error(f"GIF 转换失败: {result.stderr[:500]}")
+            return error_response(f"GIF 转换失败: {result.stderr[:300]}")
+    except FileNotFoundError:
+        return error_response("未找到 ffmpeg，请先安装 ffmpeg")
+    except subprocess.TimeoutExpired:
+        return error_response("GIF 转换超时（60s）")
 
 
 # ===================== 启动入口 =====================
