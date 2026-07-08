@@ -157,7 +157,7 @@ cs-visual-wiki/
 #### 1. 克隆项目
 ```bash
 git clone <项目仓库地址>
-cd cs-visual-wiki
+cd cs-visual-learn
 ```
 
 #### 2. 配置后端环境

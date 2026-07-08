@@ -7,8 +7,9 @@ __pycache__/
 chroma_db/
 
 # 渲染输出与媒体文件
-output/
+outputs/
 media/
+cache/
 *.mp4
 *.avi
 *.png
@@ -17,6 +18,8 @@ media/
 *.log
 *.tmp
 temp_*.py
+replace.txt
+bfg*.jar
 
 # IDE配置
 .idea/

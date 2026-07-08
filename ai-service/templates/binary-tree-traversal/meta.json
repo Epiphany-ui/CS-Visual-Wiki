@@ -1,0 +1,53 @@
+{
+  "name": "二叉树遍历",
+  "description": "演示二叉树的四种遍历方式（前序/中序/后序/层序），可调整树深度、动画速度",
+  "category": "数据结构",
+  "tags": ["二叉树", "遍历", "数据结构"],
+  "difficulty": "中等",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "traversal_type",
+      "label": "遍历方式",
+      "type": "select",
+      "required": true,
+      "default": "preorder",
+      "description": "选择二叉树遍历方式",
+      "options": [
+        {"label": "前序遍历（根左右）", "value": "preorder"},
+        {"label": "中序遍历（左根右）", "value": "inorder"},
+        {"label": "后序遍历（左右根）", "value": "postorder"},
+        {"label": "层序遍历（BFS）", "value": "levelorder"}
+      ]
+    },
+    {
+      "name": "tree_depth",
+      "label": "树深度",
+      "type": "integer",
+      "required": false,
+      "default": 3,
+      "min": 2,
+      "max": 4,
+      "description": "二叉树的深度（2-4层，避免过深渲染过慢）"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "description": "动画播放速度，数值越大越快"
+    },
+    {
+      "name": "show_values",
+      "label": "显示节点值",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否在节点上显示数值"
+    }
+  ]
+}

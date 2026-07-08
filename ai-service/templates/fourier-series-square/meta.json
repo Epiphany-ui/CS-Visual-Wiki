@@ -1,0 +1,39 @@
+{
+  "name": "傅里叶级数方波分解",
+  "description": "演示方波的傅里叶级数分解过程，通过叠加不同频率的正弦波逐步逼近方波，可调整级数项数",
+  "category": "数学",
+  "tags": ["傅里叶级数", "信号处理", "高等数学"],
+  "difficulty": "困难",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "num_terms",
+      "label": "级数项数",
+      "type": "integer",
+      "required": false,
+      "default": 5,
+      "min": 1,
+      "max": 20,
+      "description": "傅里叶级数叠加的项数，项数越多越接近方波"
+    },
+    {
+      "name": "show_components",
+      "label": "显示分量",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否显示各次谐波分量"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "description": "动画播放速度，数值越大越快"
+    }
+  ]
+}

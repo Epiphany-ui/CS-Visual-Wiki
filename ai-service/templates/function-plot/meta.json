@@ -1,0 +1,75 @@
+{
+  "name": "一元函数图像绘制",
+  "description": "输入任意一元函数表达式，自动绘制函数图像，支持调整坐标范围、网格显示、绘制动画",
+  "category": "数学",
+  "tags": ["函数", "图像", "高等数学"],
+  "difficulty": "入门",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "function_expr",
+      "label": "函数表达式",
+      "type": "string",
+      "required": true,
+      "default": "np.sin(x)",
+      "description": "输入关于x的函数表达式，支持numpy函数，例如np.sin(x), x**2, np.exp(-x**2)"
+    },
+    {
+      "name": "x_min",
+      "label": "X轴最小值",
+      "type": "number",
+      "required": false,
+      "default": -5,
+      "min": -20,
+      "max": 20,
+      "description": "X轴显示范围最小值"
+    },
+    {
+      "name": "x_max",
+      "label": "X轴最大值",
+      "type": "number",
+      "required": false,
+      "default": 5,
+      "min": -20,
+      "max": 20,
+      "description": "X轴显示范围最大值"
+    },
+    {
+      "name": "y_min",
+      "label": "Y轴最小值",
+      "type": "number",
+      "required": false,
+      "default": -3,
+      "min": -20,
+      "max": 20,
+      "description": "Y轴显示范围最小值"
+    },
+    {
+      "name": "y_max",
+      "label": "Y轴最大值",
+      "type": "number",
+      "required": false,
+      "default": 3,
+      "min": -20,
+      "max": 20,
+      "description": "Y轴显示范围最大值"
+    },
+    {
+      "name": "show_grid",
+      "label": "显示网格",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否显示坐标网格"
+    },
+    {
+      "name": "show_animation",
+      "label": "绘制动画",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否显示函数曲线绘制动画"
+    }
+  ]
+}

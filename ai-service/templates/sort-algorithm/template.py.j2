@@ -1,0 +1,206 @@
+from manim import *
+import random
+import numpy as np
+
+class SortAnimation(Scene):
+    def construct(self):
+        # 参数配置
+        ALGORITHM = "{{ algorithm }}"
+        ARRAY_SIZE = {{ array_size }}
+        SPEED = {{ speed }}
+        SHOW_VALUES = {{ 'True' if show_values else 'False' }}
+        RUN_TIME = 0.5 / SPEED
+
+        # 标题
+        title_map = {
+            "bubble": "Bubble Sort",
+            "selection": "Selection Sort",
+            "insertion": "Insertion Sort",
+            "quick": "Quick Sort",
+            "merge": "Merge Sort"
+        }
+        title = Text(title_map[ALGORITHM], font_size=36).to_edge(UP)
+        self.add(title)
+
+        # 生成随机数组
+        random.seed(42)
+        arr = [random.randint(1, ARRAY_SIZE) for _ in range(ARRAY_SIZE)]
+        max_val = max(arr)
+
+        # 创建柱状图
+        bars = VGroup()
+        values = VGroup()
+        bar_width = 0.8
+        spacing = 0.2
+        total_width = ARRAY_SIZE * (bar_width + spacing) - spacing
+        start_x = -total_width / 2
+
+        for i, val in enumerate(arr):
+            bar = Rectangle(
+                width=bar_width,
+                height=val / max_val * 4,
+                fill_color=BLUE,
+                fill_opacity=0.8,
+                stroke_color=WHITE
+            ).move_to(
+                start_x + i * (bar_width + spacing) * RIGHT +
+                (val / max_val * 2) * UP
+            )
+            bars.add(bar)
+            if SHOW_VALUES:
+                val_text = Text(str(val), font_size=20).next_to(bar, UP, buff=0.1)
+                values.add(val_text)
+
+        self.add(bars)
+        if SHOW_VALUES:
+            self.add(values)
+        self.wait(0.5)
+
+        # 排序算法实现
+        def swap(i, j):
+            """交换两个柱子的位置"""
+            bars[i], bars[j] = bars[j], bars[i]
+            if SHOW_VALUES:
+                values[i], values[j] = values[j], values[i]
+            self.play(
+                bars[i].animate.move_to(bars[j].get_center()),
+                bars[j].animate.move_to(bars[i].get_center()),
+                values[i].animate.next_to(bars[i], UP, buff=0.1) if SHOW_VALUES else Wait(),
+                values[j].animate.next_to(bars[j], UP, buff=0.1) if SHOW_VALUES else Wait(),
+                run_time=RUN_TIME
+            )
+
+        def set_color(i, color):
+            """设置柱子颜色"""
+            bars[i].set_fill(color)
+
+        # 冒泡排序
+        if ALGORITHM == "bubble":
+            for i in range(len(arr)):
+                for j in range(len(arr) - i - 1):
+                    set_color(j, YELLOW)
+                    set_color(j+1, YELLOW)
+                    self.wait(RUN_TIME * 0.5)
+                    if arr[j] > arr[j+1]:
+                        arr[j], arr[j+1] = arr[j+1], arr[j]
+                        swap(j, j+1)
+                    set_color(j, BLUE)
+                    set_color(j+1, BLUE)
+                set_color(len(arr) - i - 1, GREEN)
+
+        # 选择排序
+        elif ALGORITHM == "selection":
+            for i in range(len(arr)):
+                min_idx = i
+                set_color(i, RED)
+                for j in range(i+1, len(arr)):
+                    set_color(j, YELLOW)
+                    self.wait(RUN_TIME * 0.3)
+                    if arr[j] < arr[min_idx]:
+                        set_color(min_idx, BLUE)
+                        min_idx = j
+                        set_color(min_idx, RED)
+                    else:
+                        set_color(j, BLUE)
+                if min_idx != i:
+                    arr[i], arr[min_idx] = arr[min_idx], arr[i]
+                    swap(i, min_idx)
+                set_color(i, GREEN)
+
+        # 插入排序
+        elif ALGORITHM == "insertion":
+            for i in range(1, len(arr)):
+                key = arr[i]
+                j = i - 1
+                set_color(i, RED)
+                self.wait(RUN_TIME * 0.5)
+                while j >= 0 and arr[j] > key:
+                    arr[j+1] = arr[j]
+                    swap(j, j+1)
+                    j -= 1
+                arr[j+1] = key
+                for k in range(i+1):
+                    set_color(k, GREEN)
+
+        # 快速排序（简化版）
+        elif ALGORITHM == "quick":
+            def quick_sort(low, high):
+                if low < high:
+                    pi = partition(low, high)
+                    quick_sort(low, pi-1)
+                    quick_sort(pi+1, high)
+
+            def partition(low, high):
+                pivot = arr[high]
+                set_color(high, RED)
+                i = low - 1
+                for j in range(low, high):
+                    set_color(j, YELLOW)
+                    self.wait(RUN_TIME * 0.3)
+                    if arr[j] < pivot:
+                        i += 1
+                        arr[i], arr[j] = arr[j], arr[i]
+                        swap(i, j)
+                    set_color(j, BLUE)
+                arr[i+1], arr[high] = arr[high], arr[i+1]
+                swap(i+1, high)
+                set_color(i+1, GREEN)
+                return i + 1
+
+            quick_sort(0, len(arr)-1)
+            for k in range(len(arr)):
+                set_color(k, GREEN)
+
+        # 归并排序（简化版）
+        elif ALGORITHM == "merge":
+            def merge_sort(l, r):
+                if l < r:
+                    mid = (l + r) // 2
+                    merge_sort(l, mid)
+                    merge_sort(mid+1, r)
+                    merge(l, mid, r)
+
+            def merge(l, mid, r):
+                left = arr[l:mid+1]
+                right = arr[mid+1:r+1]
+                i = j = 0
+                k = l
+                while i < len(left) and j < len(right):
+                    set_color(k, YELLOW)
+                    self.wait(RUN_TIME * 0.3)
+                    if left[i] <= right[j]:
+                        arr[k] = left[i]
+                        i += 1
+                    else:
+                        arr[k] = right[j]
+                        j += 1
+                    # 更新柱子高度
+                    bars[k].stretch_to_fit_height(arr[k]/max_val*4, about_edge=DOWN)
+                    if SHOW_VALUES:
+                        values[k].become(Text(str(arr[k]), font_size=20).next_to(bars[k], UP, buff=0.1))
+                    self.wait(RUN_TIME * 0.5)
+                    set_color(k, GREEN)
+                    k += 1
+                while i < len(left):
+                    arr[k] = left[i]
+                    bars[k].stretch_to_fit_height(arr[k]/max_val*4, about_edge=DOWN)
+                    if SHOW_VALUES:
+                        values[k].become(Text(str(arr[k]), font_size=20).next_to(bars[k], UP, buff=0.1))
+                    set_color(k, GREEN)
+                    i += 1
+                    k += 1
+                while j < len(right):
+                    arr[k] = right[j]
+                    bars[k].stretch_to_fit_height(arr[k]/max_val*4, about_edge=DOWN)
+                    if SHOW_VALUES:
+                        values[k].become(Text(str(arr[k]), font_size=20).next_to(bars[k], UP, buff=0.1))
+                    set_color(k, GREEN)
+                    j += 1
+                    k += 1
+
+            merge_sort(0, len(arr)-1)
+
+        # 排序完成，全部变绿色
+        for bar in bars:
+            bar.set_fill(GREEN)
+        self.wait(1)

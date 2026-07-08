@@ -1,0 +1,113 @@
+from manim import *
+import numpy as np
+
+class CentralLimitTheorem(Scene):
+    def construct(self):
+        # 参数配置
+        DISTRIBUTION = "{{ distribution }}"
+        SAMPLE_SIZE = {{ sample_size }}
+        NUM_SAMPLES = {{ num_samples }}
+        SPEED = {{ speed }}
+        RUN_TIME = 0.05 / SPEED
+
+        # 标题
+        dist_name = {
+            "uniform": "Uniform Distribution",
+            "exponential": "Exponential Distribution",
+            "binomial": "Binomial Distribution"
+        }
+        title = Text(f"Central Limit Theorem: {dist_name[DISTRIBUTION]}", font_size=28).to_edge(UP)
+        self.add(title)
+
+        # 预计算所有数据
+        np.random.seed(42)
+        means = []
+        for _ in range(NUM_SAMPLES):
+            if DISTRIBUTION == "uniform":
+                sample = np.random.uniform(0, 1, SAMPLE_SIZE)
+            elif DISTRIBUTION == "exponential":
+                sample = np.random.exponential(1, SAMPLE_SIZE)
+            elif DISTRIBUTION == "binomial":
+                sample = np.random.binomial(10, 0.5, SAMPLE_SIZE)
+            means.append(np.mean(sample))
+
+        # 坐标轴
+        axes = Axes(
+            x_range=[min(means)*0.9, max(means)*1.1, (max(means)-min(means))/10],
+            y_range=[0, NUM_SAMPLES/5, NUM_SAMPLES/20],
+            x_length=10,
+            y_length=5,
+            axis_config={"color": WHITE},
+            tips=False
+        ).shift(DOWN * 0.5)
+        self.add(axes)
+
+        # 初始化直方图柱子
+        num_bins = 30
+        counts, bins = np.histogram(means, bins=num_bins)
+        bin_width = (bins[1] - bins[0]) * axes.x_axis.unit_size
+        bars = VGroup()
+        max_count = max(counts)
+
+        for i in range(num_bins):
+            bar = Rectangle(
+                width=bin_width * 0.9,
+                height=0.01,
+                fill_color=BLUE,
+                fill_opacity=0.8,
+                stroke_color=WHITE,
+                stroke_width=0.5
+            )
+            bar.move_to(axes.c2p((bins[i] + bins[i+1])/2, 0), aligned_edge=DOWN)
+            bars.add(bar)
+        self.add(bars)
+
+        # 计数文本
+        count_text = Text(f"Samples: 0 / {NUM_SAMPLES}", font_size=24).to_corner(UL)
+        mean_text = Text(f"Current Mean: 0.00", font_size=24).next_to(count_text, DOWN, aligned_edge=LEFT)
+        self.add(count_text, mean_text)
+
+        # 动画更新：逐步添加样本
+        current_counts = np.zeros(num_bins)
+        update_step = max(1, NUM_SAMPLES // 100)  # 每步更新多个样本，加快速度
+        for i in range(0, NUM_SAMPLES, update_step):
+            end_idx = min(i + update_step, NUM_SAMPLES)
+            batch_means = means[i:end_idx]
+            batch_counts, _ = np.histogram(batch_means, bins=bins)
+            current_counts += batch_counts
+
+            # 更新柱子高度
+            animations = []
+            for j in range(num_bins):
+                if current_counts[j] == 0:
+                    continue
+                height = current_counts[j] / max_count * axes.y_length * 0.9
+                animations.append(
+                    bars[j].animate.stretch_to_fit_height(height, about_edge=DOWN)
+                )
+            # 更新文本
+            new_count_text = Text(f"Samples: {end_idx} / {NUM_SAMPLES}", font_size=24).to_corner(UL)
+            new_mean_text = Text(f"Current Mean: {np.mean(means[:end_idx]):.2f}", font_size=24).next_to(new_count_text, DOWN, aligned_edge=LEFT)
+            animations.append(Transform(count_text, new_count_text))
+            animations.append(Transform(mean_text, new_mean_text))
+
+            self.play(*animations, run_time=RUN_TIME * update_step)
+
+        # 拟合正态分布曲线
+        mu = np.mean(means)
+        sigma = np.std(means)
+        x = np.linspace(min(means), max(means), 100)
+        y = 1/(sigma * np.sqrt(2*np.pi)) * np.exp(-(x - mu)**2/(2*sigma**2))
+        # 缩放y轴匹配直方图
+        y = y / max(y) * max(current_counts)
+        normal_curve = axes.plot_line_graph(
+            x, y, add_vertex_dots=False, line_color=RED, stroke_width=4
+        )
+        self.play(Create(normal_curve), run_time=2)
+
+        # 标注均值和标准差
+        mu_label = Text(f"μ = {mu:.2f}", font_size=24, color=RED).next_to(normal_curve.get_center(), UR)
+        sigma_label = Text(f"σ = {sigma:.2f}", font_size=24, color=RED).next_to(mu_label, DOWN, aligned_edge=LEFT)
+        self.play(Write(mu_label), Write(sigma_label), run_time=1)
+
+        self.wait(1)
