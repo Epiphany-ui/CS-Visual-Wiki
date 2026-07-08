@@ -1,0 +1,37 @@
+{
+  "name": "KMP 字符串匹配",
+  "description": "可视化 KMP（Knuth-Morris-Pratt）字符串匹配算法，展示前缀函数（next 数组）的构建和匹配过程",
+  "category": "算法",
+  "tags": ["字符串", "KMP", "匹配", "算法"],
+  "difficulty": "中等",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "text",
+      "label": "文本串",
+      "type": "string",
+      "required": false,
+      "default": "ABABABCABABABCABABABC",
+      "description": "待搜索的文本字符串（仅支持大写英文字母）"
+    },
+    {
+      "name": "pattern",
+      "label": "模式串",
+      "type": "string",
+      "required": false,
+      "default": "ABABC",
+      "description": "要匹配的模式串（仅支持大写英文字母）"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 3.0,
+      "description": "动画播放速度"
+    }
+  ]
+}

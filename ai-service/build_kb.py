@@ -13,8 +13,8 @@ import chromadb
 from typing import List, Dict
 
 # ===================== 配置常量（可根据实际环境修改）=====================
-# 知识库根目录（相对路径）
-KB_ROOT_DIR: str = "kb_data"
+# 知识库根目录（相对路径），支持多个目录
+KB_ROOT_DIRS: list = ["kb_data", "wiki_data"]
 # ChromaDB 持久化存储目录
 CHROMA_PERSIST_DIR: str = "chroma_db"
 # 向量库集合名称
@@ -45,16 +45,17 @@ def load_file_content(file_path: str) -> str:
         return ""
 
 
-def traverse_kb_files(root_dir: str) -> tuple[List[str], List[Dict], List[str]]:
+def traverse_kb_files(root_dir: str, start_id: int = 0) -> tuple[List[str], List[Dict], List[str]]:
     """
     递归遍历知识库目录，获取所有支持的文件
     :param root_dir: 根目录路径
+    :param start_id: 起始文档 ID（多目录合并时使用）
     :return: 文档内容列表、元数据列表、文档ID列表
     """
     documents: List[str] = []
     metadatas: List[Dict] = []
     ids: List[str] = []
-    doc_index: int = 0
+    doc_index: int = start_id
 
     # 递归遍历所有子文件夹
     for root, _, files in os.walk(root_dir):
@@ -75,7 +76,8 @@ def traverse_kb_files(root_dir: str) -> tuple[List[str], List[Dict], List[str]]:
                 documents.append(content)
                 metadatas.append({
                     "file_path": file_path,
-                    "file_name": file
+                    "file_name": file,
+                    "source_dir": root_dir,
                 })
                 ids.append(f"doc_{doc_index}")
                 doc_index += 1
@@ -131,7 +133,7 @@ def load_ipynb_content(file_path: str) -> str:
 def build_knowledge_base() -> None:
     """
     主函数：构建完整的向量知识库
-    流程：初始化向量库 -> 扫描文件 -> 生成向量 -> 持久化存储 -> 输出统计
+    流程：初始化向量库 -> 扫描多个目录 -> 生成向量 -> 持久化存储 -> 输出统计
     """
     start_time = time.time()
     print("=" * 60)
@@ -154,16 +156,31 @@ def build_knowledge_base() -> None:
             metadata={"hnsw:space": SIMILARITY_FUNCTION}
         )
 
-        # 3. 扫描所有文档
-        print(f"🔍 开始扫描目录：{KB_ROOT_DIR}")
-        documents, metadatas, ids = traverse_kb_files(KB_ROOT_DIR)
-        total_docs = len(documents)
+        # 3. 扫描所有文档（遍历多个目录）
+        all_documents, all_metadatas, all_ids = [], [], []
+        doc_index = 0
 
+        for root_dir in KB_ROOT_DIRS:
+            if not os.path.exists(root_dir):
+                print(f"⚠️ 目录不存在，跳过：{root_dir}")
+                continue
+            print(f"🔍 扫描目录：{root_dir}")
+            documents, metadatas, ids = traverse_kb_files(root_dir, start_id=doc_index)
+            if documents:
+                all_documents.extend(documents)
+                all_metadatas.extend(metadatas)
+                all_ids.extend(ids)
+                doc_index += len(documents)
+                print(f"   ✅ 找到 {len(documents)} 个有效文档")
+            else:
+                print(f"   ⚠️ 未找到有效文档")
+
+        total_docs = len(all_documents)
         if total_docs == 0:
-            print("⚠️ 未找到任何有效文档，知识库构建终止")
+            print("⚠️ 所有目录均未找到有效文档，知识库构建终止")
             return
 
-        print(f"✅ 扫描完成，共找到 {total_docs} 个有效文档")
+        print(f"\n✅ 扫描完成，共找到 {total_docs} 个有效文档")
 
         # 4. 批量生成嵌入向量
         print("🔢 开始生成向量嵌入...")
@@ -173,17 +190,17 @@ def build_knowledge_base() -> None:
         valid_ids = []
         valid_embeddings = []
 
-        for idx, text in enumerate(documents):
+        for idx, text in enumerate(all_documents):
             embed = get_ollama_embedding(text)
             if not embed:
-                print(f"⚠️ 文档 {ids[idx]} 向量生成失败，已跳过")
+                print(f"⚠️ 文档 {all_ids[idx]} 向量生成失败，已跳过")
                 continue
 
             # 只有成功生成向量的文档，才会被加入最终列表
             valid_embeddings.append(embed)
             valid_documents.append(text)
-            valid_metadatas.append(metadatas[idx])
-            valid_ids.append(ids[idx])
+            valid_metadatas.append(all_metadatas[idx])
+            valid_ids.append(all_ids[idx])
 
         # 5. 批量存入向量库
         print("💾 开始存入向量数据库...")
@@ -202,6 +219,8 @@ def build_knowledge_base() -> None:
         print("=" * 60)
         print("🎉 知识库构建完成！")
         print(f"📊 入库文档总数：{total_docs} 个")
+        print(f"   - kb_data: Manim API 文档 + 示例代码")
+        print(f"   - wiki_data: 百科词条知识（已进入 RAG 检索）")
         print(f"⏱️ 总耗时：{cost_time} 秒")
         print(f"📂 向量库存储路径：{CHROMA_PERSIST_DIR}")
         print("=" * 60)

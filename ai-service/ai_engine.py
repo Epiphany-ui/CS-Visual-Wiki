@@ -8,11 +8,16 @@ import time
 import uuid
 import json
 import hashlib
+import logging
 import requests
 import subprocess
 import chromadb
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
+
+from services.logging_config import get_logger
+
+logger = get_logger("ai_engine")
 
 # ===================== 环境安全与路径配置 =====================
 miktex_path = fr"C:\Users\{os.getlogin()}\AppData\Local\Programs\MiKTeX\miktex\bin\x64"
@@ -76,7 +81,7 @@ try:
     kb_collection = chroma_client.get_collection(name=CHROMA_COLLECTION_NAME)
 except Exception as e:
     kb_collection = None
-    print(f"⚠️ 严重警告：向量库初始化失败，请检查是否已执行 build_kb.py。错误：{str(e)}")
+    logger.critical(f"严重警告：向量库初始化失败，请检查是否已执行 build_kb.py。错误：{str(e)}")
 
 CODE_OUTPUT_SUBDIR.mkdir(parents=True, exist_ok=True)
 VIDEO_OUTPUT_SUBDIR.mkdir(parents=True, exist_ok=True)
@@ -97,7 +102,7 @@ def generate_embedding(text: str) -> List[float]:
         response.raise_for_status()
         return response.json().get("embeddings", [[]])[0]
     except requests.exceptions.RequestException as e:
-        print(f"❌ 向量生成失败：{str(e)}")
+        logger.error(f"向量生成失败：{str(e)}")
         return []
 
 
@@ -139,7 +144,7 @@ def save_to_cache(user_input: str, result: Dict):
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"⚠️ 缓存写入失败：{str(e)}")
+        logger.warning(f"缓存写入失败：{str(e)}")
 
 
 # ===================== DeepSeek API 统一封装（调试版）=====================
@@ -169,7 +174,7 @@ def deepseek_chat_request(messages: List[Dict]) -> Tuple[bool, str]:
             resp_json = response.json()
 
             # ====== 调试：打印完整响应，控制台可直接看到返回内容 ======
-            print("🔍 DeepSeek完整响应：", json.dumps(resp_json, ensure_ascii=False, indent=2))
+            logger.debug("DeepSeek完整响应：%s", json.dumps(resp_json, ensure_ascii=False, indent=2))
 
             content = resp_json["choices"][0]["message"]["content"]
             if not content or not content.strip():
@@ -178,7 +183,7 @@ def deepseek_chat_request(messages: List[Dict]) -> Tuple[bool, str]:
         except requests.exceptions.Timeout:
             if attempt < max_retry - 1:
                 wait_time = 2 ** attempt
-                print(f"⚠️ DeepSeek API超时，第{attempt + 1}次重试，等待{wait_time}秒...")
+                logger.warning("DeepSeek API超时，第%d次重试，等待%d秒...", attempt + 1, wait_time)
                 time.sleep(wait_time)
                 continue
             return False, f"❌ DeepSeek API连续{max_retry}次读取超时，请稍后重试"
@@ -210,7 +215,7 @@ def rag_retrieve_references(user_query: str) -> str:
             references.append(ref)
         return "\n".join(references)
     except Exception as e:
-        print(f"❌ RAG检索失败：{str(e)}")
+        logger.error(f"RAG检索失败：{str(e)}")
         return "参考资料检索失败"
 
 

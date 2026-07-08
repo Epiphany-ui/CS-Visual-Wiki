@@ -1,0 +1,136 @@
+from manim import *
+import numpy as np
+
+class KMPStringMatch(Scene):
+    def construct(self):
+        # 参数配置
+        TEXT = "{{ text }}"
+        PATTERN = "{{ pattern }}"
+        SPEED = {{ speed }}
+        RUN_TIME = 0.6 / SPEED
+
+        n, m = len(TEXT), len(PATTERN)
+
+        # 计算前缀函数（next 数组）
+        def compute_next(p):
+            next_arr = [0] * len(p)
+            j = 0
+            for i in range(1, len(p)):
+                while j > 0 and p[i] != p[j]:
+                    j = next_arr[j - 1]
+                if p[i] == p[j]:
+                    j += 1
+                next_arr[i] = j
+            return next_arr
+
+        next_arr = compute_next(PATTERN)
+
+        # 标题
+        title = Text("KMP String Matching", font_size=30).to_edge(UP)
+        self.play(Write(title), run_time=0.5)
+
+        # 显示模式串和 next 数组
+        pattern_label = Text(f"Pattern: {PATTERN}", font_size=22, color=BLUE).next_to(title, DOWN)
+        next_str = ", ".join([f"{next_arr[i]}" for i in range(m)])
+        next_label = Text(f"next[] = [{next_str}]", font_size=18, color=YELLOW).next_to(pattern_label, DOWN, aligned_edge=LEFT)
+        self.play(Write(pattern_label), Write(next_label), run_time=1.0)
+
+        # 创建文本串的字符方块
+        char_size = 0.55
+        text_boxes = VGroup()
+        text_chars = VGroup()
+        for i, ch in enumerate(TEXT):
+            box = Square(side_length=char_size, color=WHITE, stroke_width=1)
+            box.move_to(DOWN * 1.5 + RIGHT * (i - n / 2 + 0.5) * char_size)
+            text_boxes.add(box)
+            char = Text(ch, font_size=20).move_to(box.get_center())
+            text_chars.add(char)
+
+        text_label = Text("Text:", font_size=20, color=WHITE).next_to(text_boxes, LEFT, buff=0.5)
+        self.play(Create(text_boxes), Write(text_chars), Write(text_label), run_time=1.0)
+
+        # 创建模式串的可移动方块
+        pattern_boxes = VGroup()
+        pattern_chars = VGroup()
+        for i, ch in enumerate(PATTERN):
+            box = Square(side_length=char_size, color=BLUE, stroke_width=2)
+            box.move_to(text_boxes[0].get_center() + RIGHT * i * char_size)
+            pattern_boxes.add(box)
+            char = Text(ch, font_size=20, color=BLUE).move_to(box.get_center())
+            pattern_chars.add(char)
+
+        self.play(Create(pattern_boxes), Write(pattern_chars), run_time=1.0)
+
+        # KMP 匹配过程
+        i, j = 0, 0  # i: 文本指针, j: 模式指针
+        match_count = 0
+        status = Text(f"Comparing...", font_size=20, color=WHITE)
+        status.next_to(next_label, DOWN, aligned_edge=LEFT)
+        self.play(Write(status))
+
+        while i < n:
+            # 移动模式串到对应位置
+            shift = i - j
+            target_positions = [text_boxes[shift + k].get_center() for k in range(m)]
+
+            new_pat_boxes = VGroup()
+            new_pat_chars = VGroup()
+            for k, pos in enumerate(target_positions):
+                if k < m:
+                    box = Square(side_length=char_size, color=BLUE, stroke_width=2)
+                    box.move_to(pos)
+                    new_pat_boxes.add(box)
+                    char = Text(PATTERN[k], font_size=20, color=BLUE).move_to(pos)
+                    new_pat_chars.add(char)
+
+            self.play(
+                Transform(pattern_boxes, new_pat_boxes),
+                Transform(pattern_chars, new_pat_chars),
+                run_time=RUN_TIME * 0.6
+            )
+
+            # 高亮当前比较位置
+            if j < m:
+                highlight = text_boxes[i].copy().set_fill(YELLOW, opacity=0.5).set_stroke(YELLOW, width=3)
+                self.play(FadeIn(highlight), run_time=0.2)
+
+            if TEXT[i] == PATTERN[j]:
+                # 匹配成功
+                new_status = Text(f"Match at i={i}, j={j}: {TEXT[i]} == {PATTERN[j]}", font_size=18, color=GREEN)
+                new_status.next_to(next_label, DOWN, aligned_edge=LEFT)
+                self.play(Transform(status, new_status), run_time=RUN_TIME * 0.3)
+                status = new_status
+                i += 1
+                j += 1
+
+                if j == m:
+                    # 完全匹配！
+                    match_count += 1
+                    match_start = i - m
+                    # 高亮匹配位置
+                    for k in range(m):
+                        self.play(text_boxes[match_start + k].animate.set_fill(GREEN, opacity=0.5).set_stroke(GREEN, width=2), run_time=0.05)
+                    found_text = Text(f"Found at index {match_start}!", font_size=22, color=GREEN)
+                    found_text.next_to(status, DOWN, aligned_edge=LEFT)
+                    self.play(Write(found_text), run_time=0.5)
+                    j = next_arr[j - 1] if j > 0 else 0
+            else:
+                # 不匹配
+                new_status = Text(f"Mismatch at i={i}, j={j}: {TEXT[i]} != {PATTERN[j]}", font_size=18, color=RED)
+                new_status.next_to(next_label, DOWN, aligned_edge=LEFT)
+                self.play(Transform(status, new_status), run_time=RUN_TIME * 0.3)
+                status = new_status
+
+                if j > 0:
+                    j = next_arr[j - 1]
+                else:
+                    i += 1
+
+            if j < m and highlight:
+                self.play(FadeOut(highlight), run_time=0.1)
+
+        if match_count == 0:
+            no_match = Text("No match found", font_size=22, color=RED).next_to(status, DOWN, aligned_edge=LEFT)
+            self.play(Write(no_match), run_time=0.5)
+
+        self.wait(2)

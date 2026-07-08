@@ -10,6 +10,7 @@ chroma_db/
 outputs/
 media/
 cache/
+logs/
 *.mp4
 *.avi
 *.png
