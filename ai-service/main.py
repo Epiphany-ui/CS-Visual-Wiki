@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CS Visual Wiki - AI 服务入口
+CS Visual Learn - AI 服务入口
 直接复用 ai_engine 核心能力，外层封装 FastAPI 接口
 """
 import os
