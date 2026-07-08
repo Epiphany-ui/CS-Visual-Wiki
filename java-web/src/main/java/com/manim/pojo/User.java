@@ -10,8 +10,8 @@ import java.time.LocalDateTime;
 /**
  * 系统登录用户实体
  * <p>
- * 对应 database.sql 中 user 表结构：
- * id, username, password, create_time
+ * 对应 user 表结构：
+ * id, username, password, nickname, avatar, intro, create_time
  * </p>
  */
 @TableName("user")
@@ -28,6 +28,15 @@ public class User {
     @JsonIgnore
     @Schema(description = "登录密码（写入/校验用，响应不返回）")
     private String password;
+
+    @Schema(description = "用户昵称（显示用）")
+    private String nickname;
+
+    @Schema(description = "头像 URL")
+    private String avatar;
+
+    @Schema(description = "个人简介")
+    private String intro;
 
     @TableField(fill = FieldFill.INSERT)
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
@@ -58,6 +67,30 @@ public class User {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public String getNickname() {
+        return nickname;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    public String getAvatar() {
+        return avatar;
+    }
+
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
+    }
+
+    public String getIntro() {
+        return intro;
+    }
+
+    public void setIntro(String intro) {
+        this.intro = intro;
     }
 
     public LocalDateTime getCreateTime() {

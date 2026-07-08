@@ -67,4 +67,14 @@ public class UserServiceImpl implements UserService {
     public void register(User user) {
         userMapper.insert(user);
     }
+
+    @Override
+    public void updateProfile(Integer userId, String nickname, String avatar, String intro) {
+        User user = userMapper.selectById(userId);
+        if (user == null) return;
+        if (nickname != null) user.setNickname(nickname);
+        if (avatar != null) user.setAvatar(avatar);
+        if (intro != null) user.setIntro(intro);
+        userMapper.updateById(user);
+    }
 }

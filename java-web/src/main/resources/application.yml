@@ -1,5 +1,7 @@
 server:
   port: 8080
+  servlet:
+    context-path: /  # API 统一前缀 /api/v1/，由 Controller 层 RequestMapping 指定
 
 spring:
   datasource:
@@ -20,9 +22,8 @@ spring:
         queue-capacity: 20
       thread-name-prefix: manim-async-
 
-# MyBatis-Plus 配置
+# MyBatis-Plus 配置（使用 @Mapper 注解，无需 XML）
 mybatis-plus:
-  mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.manim.pojo
   global-config:
     db-config:
