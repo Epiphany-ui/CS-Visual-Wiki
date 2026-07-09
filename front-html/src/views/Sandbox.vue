@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { generationApi } from '@/api/generation'
 import { videosApi } from '@/api/videos'
 import { useSSE } from '@/composables/useSSE'
@@ -10,7 +10,6 @@ import { ElMessage } from 'element-plus'
 import CodeEditor from '@/components/common/CodeEditor.vue'
 
 const route = useRoute()
-const router = useRouter()
 const taskStore = useTaskStore()
 const { connect, disconnect } = useSSE()
 
@@ -28,25 +27,21 @@ const currentFilename = ref('')
 let _activeTaskId = ''
 let _progressTimer: ReturnType<typeof setInterval> | null = null
 let _progressTarget = 0
+let _taskCompleted = false // 防止 onerror 覆盖已完成的结果
 
-// 平滑进度条：不跟随 tqdm 跳动，自动递增到目标值
-function startSmoothProgress() {
+function startSmoothProgress(fromPct = 0) {
   stopSmoothProgress()
-  _progressTarget = 5
+  progress.value = fromPct
+  _progressTarget = Math.max(fromPct, 5)
+  _taskCompleted = false
   _progressTimer = setInterval(() => {
     if (progress.value < _progressTarget) {
-      progress.value = Math.round(Math.min(progress.value + 1, _progressTarget))
+      progress.value = Math.round(progress.value + 1)
     }
-    // 缓慢自动增长，最高到 92%
     if (_progressTarget < 92) {
-      _progressTarget = Math.round((_progressTarget + 0.5) * 10) / 10
+      _progressTarget += 0.3
     }
-  }, 200)
-}
-
-function setProgressStage(pct: number, msg: string) {
-  _progressTarget = Math.max(_progressTarget, pct)
-  progressMsg.value = msg
+  }, 300)
 }
 
 function stopSmoothProgress() {
@@ -54,21 +49,53 @@ function stopSmoothProgress() {
   _progressTarget = 0
 }
 
-function getLastError(): string {
-  const lines = logOutput.value.split('\n')
-  const errStart = lines.findIndex(l => l.includes('Traceback') || l.includes('Error') || l.includes('❌'))
-  if (errStart >= 0) return lines.slice(errStart).join('\n')
-  return logOutput.value.slice(-500)
+function onTaskDone(success: boolean) {
+  _taskCompleted = true
+  stopSmoothProgress()
+  progress.value = success ? 100 : progress.value
+  generating.value = false
+  disconnect()
+  localStorage.removeItem('cs:active-task')
 }
 
+function onSSEEvent(evt: SSETaskEvent) {
+  progressMsg.value = evt.message || progressMsg.value
+  if ((evt as any).code) code.value = (evt as any).code
+  if (evt.video_path) {
+    videoPath.value = evt.video_path
+    videoUrl.value = `http://localhost:8000${evt.video_path}`
+    currentFilename.value = evt.video_path.replace('/videos/', '')
+    // 加入"我的作品"
+    try {
+      const works = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
+      if (!works.includes(currentFilename.value)) {
+        works.unshift(currentFilename.value)
+        localStorage.setItem('cs:my-works', JSON.stringify(works.slice(0, 50)))
+      }
+    } catch { /* ignore */ }
+  }
+  if (evt.log) logOutput.value += evt.log + '\n'
+  taskStore.updateProgress(evt)
+  if (evt.state === 'SUCCESS') {
+    onTaskDone(true)
+  } else if (evt.state === 'FAILURE') {
+    onTaskDone(false)
+  }
+}
+
+function onSSEError() {
+  if (_taskCompleted) return // SSE 关闭触发的 onerror，忽略
+  stopSmoothProgress()
+  generating.value = false
+}
+
+// --- 恢复 ---
 function restoreTaskFromSession() {
   const tid = localStorage.getItem('cs:active-task')
   if (!tid) return
 
-  // 先检查任务是否已经完成（通过 taskStore 缓存的状态）
   const cached = taskStore.activeTask
   if (cached?.state === 'SUCCESS') {
-    // 任务已完成，直接恢复 UI，不需要重连 SSE
     progress.value = 100
     generating.value = false
     if ((cached as any).code) code.value = (cached as any).code
@@ -84,64 +111,31 @@ function restoreTaskFromSession() {
     progressMsg.value = cached.message || '任务失败'
     return
   }
-
-  // 任务仍在进行中，重连 SSE
-  _activeTaskId = tid
-  generating.value = true
-  startSmoothProgress()
-  // 从缓存的进度开始，不从 0 开始
-  if (cached?.progress) _progressTarget = cached.progress
-  progressMsg.value = cached?.message || '恢复中...'
-  code.value = (cached as any)?.code || ''
-
-  connect(tid, (data) => {
-    if ((data as SSEDoneEvent).type === 'done') {
-      stopSmoothProgress(); progress.value = 100; generating.value = false; disconnect(); return
-    }
-    const evt = data as SSETaskEvent
-    // 恢复路径：UNKNOWN 表示任务已过期（Redis 中不存在）→ 清理
-    if (evt.state === 'UNKNOWN') {
-      stopSmoothProgress(); generating.value = false; disconnect()
-      localStorage.removeItem('cs:active-task')
-      progressMsg.value = '任务已过期，请重新开始'
-      return
-    }
-    progressMsg.value = evt.message
-    if ((evt as any).code) code.value = (evt as any).code
-    if (evt.video_path) {
-      videoPath.value = evt.video_path
-      videoUrl.value = `http://localhost:8000${evt.video_path}`
-      currentFilename.value = evt.video_path.replace('/videos/', '')
-      const works = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
-      if (!works.includes(currentFilename.value)) {
-        works.unshift(currentFilename.value)
-        localStorage.setItem('cs:my-works', JSON.stringify(works.slice(0, 50)))
+  // 任务可能仍在运行
+  if (cached?.state === 'PENDING' || cached?.state === 'STARTED' || cached?.state === 'RENDERING') {
+    _activeTaskId = tid
+    generating.value = true
+    startSmoothProgress(cached.progress || 0)
+    progressMsg.value = cached.message || '恢复中...'
+    code.value = (cached as any)?.code || ''
+    connect(tid, (data) => {
+      if ((data as SSEDoneEvent).type === 'done') { onTaskDone(true); return }
+      const evt = data as SSETaskEvent
+      if (evt.state === 'UNKNOWN') {
+        stopSmoothProgress(); generating.value = false; disconnect()
+        localStorage.removeItem('cs:active-task')
+        progressMsg.value = '任务已过期，请重新开始'
+        return
       }
-    }
-    if (evt.log) logOutput.value += evt.log + '\n'
-    taskStore.updateProgress(evt)
-    if (evt.state === 'SUCCESS') {
-      stopSmoothProgress(); progress.value = 100; generating.value = false; disconnect()
-      localStorage.removeItem('cs:active-task')
-    } else if (evt.state === 'FAILURE') {
-      stopSmoothProgress(); generating.value = false; disconnect()
-      localStorage.removeItem('cs:active-task')
-    }
-  }, () => { stopSmoothProgress(); generating.value = false })
-}
-
-async function handleSaveToGallery() {
-  const fn = currentFilename.value
-  if (!fn) return
-  try {
-    const res = await videosApi.saveVideo(fn)
-    savedToGallery.value = res.data.data?.saved ?? false
-    ElMessage.success(savedToGallery.value ? '已收藏' : '已取消收藏')
-  } catch {
-    ElMessage.error('操作失败')
+      onSSEEvent(evt)
+    }, onSSEError)
+    return
   }
+  // 其他状态：清理
+  localStorage.removeItem('cs:active-task')
 }
 
+// --- 操作 ---
 function handleGenerate() {
   if (!requirement.value.trim()) return
   startAsyncTask(() => generationApi.asyncGenerate(requirement.value.trim()))
@@ -160,66 +154,59 @@ async function handleFixCode() {
   try {
     const res = await generationApi.fixCode(code.value, err)
     const fixed = res.data.data?.code
-    if (fixed && fixed !== code.value) {
-      code.value = fixed
-      ElMessage.success('代码已修复')
-    } else {
-      ElMessage.info('AI 未找到可修复的问题')
-    }
-  } catch {
-    ElMessage.error('修复失败，请重试')
-  } finally { fixing.value = false }
+    if (fixed && fixed !== code.value) { code.value = fixed; ElMessage.success('代码已修复') }
+    else { ElMessage.info('AI 未找到可修复的问题') }
+  } catch { ElMessage.error('修复失败，请重试') }
+  finally { fixing.value = false }
 }
 
+async function handleSaveToGallery() {
+  if (!currentFilename.value) return
+  try {
+    const res = await videosApi.saveVideo(currentFilename.value)
+    savedToGallery.value = res.data.data?.saved ?? false
+    ElMessage.success(savedToGallery.value ? '已收藏' : '已取消收藏')
+  } catch { ElMessage.error('操作失败') }
+}
+
+function getLastError(): string {
+  const lines = logOutput.value.split('\n')
+  const errStart = lines.findIndex(l => l.includes('Traceback') || l.includes('Error') || l.includes('❌'))
+  if (errStart >= 0) return lines.slice(errStart).join('\n')
+  return logOutput.value.slice(-500)
+}
+
+// --- 异步任务核心 ---
 async function startAsyncTask(apiCall: () => Promise<any>) {
-  generating.value = true; videoPath.value = ''
-  logOutput.value = ''; savedToGallery.value = false; currentFilename.value = ''
-  startSmoothProgress()
+  // 重置所有状态
+  generating.value = true
+  progress.value = 0
+  progressMsg.value = ''
+  videoPath.value = ''
+  videoUrl.value = ''
+  logOutput.value = ''
+  savedToGallery.value = false
+  currentFilename.value = ''
+  // 不重置 code — 保留用户编辑的内容
+  startSmoothProgress(0)
+
   try {
     const res = await apiCall()
     const taskId = res.data.data?.task_id
-    if (taskId) {
-      _activeTaskId = taskId
-      localStorage.setItem('cs:active-task', taskId)
-      // 记录到待处理列表，画廊"我的作品"可据此补漏
-      try {
-        const pending = JSON.parse(localStorage.getItem('cs:pending-tasks') || '[]')
-        if (!pending.includes(taskId)) {
-          pending.unshift(taskId)
-          localStorage.setItem('cs:pending-tasks', JSON.stringify(pending.slice(0, 20)))
-        }
-      } catch { /* ignore */ }
-      taskStore.startTask(taskId)
-      connect(taskId, (data) => {
-        if ((data as SSEDoneEvent).type === 'done') {
-          stopSmoothProgress(); progress.value = 100; generating.value = false; disconnect(); return
-        }
-        const evt = data as SSETaskEvent
-        progressMsg.value = evt.message
-        if ((evt as any).code) code.value = (evt as any).code
-        if (evt.video_path) {
-          videoPath.value = evt.video_path
-          videoUrl.value = `http://localhost:8000${evt.video_path}`
-          currentFilename.value = evt.video_path.replace('/videos/', '')
-          const works = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
-          if (!works.includes(currentFilename.value)) {
-            works.unshift(currentFilename.value)
-            localStorage.setItem('cs:my-works', JSON.stringify(works.slice(0, 50)))
-          }
-        }
-        if (evt.log) logOutput.value += evt.log + '\n'
-        taskStore.updateProgress(evt)
-        if (evt.state === 'SUCCESS') {
-          stopSmoothProgress(); progress.value = 100
-          generating.value = false; disconnect()
-          localStorage.removeItem('cs:active-task')
-        } else if (evt.state === 'FAILURE') {
-          stopSmoothProgress()
-          generating.value = false; disconnect()
-          localStorage.removeItem('cs:active-task')
-        }
-      }, () => { stopSmoothProgress(); generating.value = false })
-    }
+    if (!taskId) { generating.value = false; return }
+
+    _activeTaskId = taskId
+    localStorage.setItem('cs:active-task', taskId)
+    try {
+      const pending = JSON.parse(localStorage.getItem('cs:pending-tasks') || '[]')
+      if (!pending.includes(taskId)) { pending.unshift(taskId); localStorage.setItem('cs:pending-tasks', JSON.stringify(pending.slice(0, 20))) }
+    } catch { /* ignore */ }
+    taskStore.startTask(taskId)
+
+    connect(taskId, (data) => {
+      if ((data as SSEDoneEvent).type === 'done') { onTaskDone(true); return }
+      onSSEEvent(data as SSETaskEvent)
+    }, onSSEError)
   } catch { stopSmoothProgress(); generating.value = false }
 }
 
@@ -228,9 +215,8 @@ onMounted(() => {
   if (prompt) requirement.value = prompt
   restoreTaskFromSession()
 })
+
 onUnmounted(() => {
-  // 清理旧的 SSE 连接和进度定时器
-  // 任务状态保存在 sessionStorage + taskStore 中，回来时 restoreTaskFromSession 会重连
   disconnect()
   stopSmoothProgress()
 })
@@ -256,7 +242,6 @@ onUnmounted(() => {
     </div>
 
     <div class="sb-panels">
-      <!-- 左：AI 对话 -->
       <div class="sb-panel panel-chat">
         <div class="panel-header"><el-icon><ChatDotRound /></el-icon> AI 对话助手</div>
         <div class="panel-body">
@@ -270,7 +255,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 中：代码编辑器 -->
       <div class="sb-panel panel-code">
         <div class="panel-header">
           <el-icon><Document /></el-icon> Manim 代码
@@ -283,7 +267,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 右：预览 -->
       <div class="sb-panel panel-preview">
         <div class="panel-header"><el-icon><VideoCamera /></el-icon> 预览</div>
         <div class="panel-body preview-body">
