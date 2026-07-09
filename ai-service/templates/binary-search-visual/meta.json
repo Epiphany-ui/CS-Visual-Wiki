@@ -1,0 +1,49 @@
+{
+  "name": "二分查找可视化",
+  "description": "展示二分查找算法在有序数组中的查找过程，直观看到搜索区间的不断缩小",
+  "category": "算法",
+  "tags": ["二分查找", "搜索", "算法", "入门"],
+  "difficulty": "入门",
+  "cover": "",
+  "use_count": 0,
+  "params": [
+    {
+      "name": "array_size",
+      "label": "数组大小",
+      "type": "integer",
+      "required": false,
+      "default": 16,
+      "min": 8,
+      "max": 32,
+      "description": "有序数组的元素个数"
+    },
+    {
+      "name": "target",
+      "label": "目标值",
+      "type": "integer",
+      "required": false,
+      "default": 7,
+      "min": 1,
+      "max": 32,
+      "description": "要查找的目标值（不存在时展示失败情况）"
+    },
+    {
+      "name": "speed",
+      "label": "动画速度",
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "min": 0.5,
+      "max": 3.0,
+      "description": "动画播放速度"
+    },
+    {
+      "name": "show_pointers",
+      "label": "显示指针",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "description": "是否高亮显示 left/mid/right 指针"
+    }
+  ]
+}

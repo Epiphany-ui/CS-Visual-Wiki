@@ -1,0 +1,74 @@
+# CS-Visual-Learn AI Service 容器编排
+# 启动: docker-compose up -d
+# 查看日志: docker-compose logs -f
+# 停止: docker-compose down
+
+version: "3.8"
+
+services:
+  # Redis — 消息队列 + 进度存储
+  redis:
+    image: redis:7-alpine
+    container_name: cs-visual-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # FastAPI 服务 — v1.0 API
+  api:
+    build: .
+    container_name: cs-visual-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - API_WORKERS=4
+    volumes:
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      - ./wiki_data:/app/wiki_data
+      - ./templates:/app/templates
+      - ./prompts:/app/prompts
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-1}
+
+  # Celery Worker — 异步渲染
+  worker:
+    build: .
+    container_name: cs-visual-worker
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+      - ./wiki_data:/app/wiki_data
+      - ./templates:/app/templates
+      - ./prompts:/app/prompts
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    command: celery -A workers.celery_app worker --loglevel=info
+
+volumes:
+  redis_data:

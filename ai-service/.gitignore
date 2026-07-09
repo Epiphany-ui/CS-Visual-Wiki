@@ -10,6 +10,7 @@ chroma_db/
 outputs/
 media/
 cache/
+logs/
 *.mp4
 *.avi
 *.png
@@ -26,3 +27,6 @@ bfg*.jar
 .vscode/
 
 .env
+
+# Redis 持久化文件
+dump.rdb

@@ -13,6 +13,11 @@ public interface UserService {
     User findByUsername(String username);
 
     /**
+     * 根据用户 ID 查询用户
+     */
+    User getById(Integer id);
+
+    /**
      * 用户登录校验
      *
      * @param username 用户名
@@ -27,4 +32,14 @@ public interface UserService {
      * @param user 用户对象（含 username + 已加密的 password）
      */
     void register(User user);
+
+    /**
+     * 更新用户资料
+     *
+     * @param userId   用户 ID
+     * @param nickname 昵称（可选）
+     * @param avatar   头像 URL（可选）
+     * @param intro    简介（可选）
+     */
+    void updateProfile(Integer userId, String nickname, String avatar, String intro);
 }

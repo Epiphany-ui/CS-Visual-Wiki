@@ -18,8 +18,8 @@ import java.util.List;
 /**
  * JWT 认证过滤器
  * <p>
- * 白名单路径（/api/register, /api/login）直接放行；
- * 其余 /api/* 请求校验 Authorization: Bearer token，
+ * 白名单路径（/api/v1/user/register, /api/v1/user/login）直接放行；
+ * 其余 /api/v1/* 请求校验 Authorization: Bearer token，
  * 校验通过后将用户名写入 {@link UserContext}，供后续 Controller 使用。
  * </p>
  */
@@ -30,8 +30,8 @@ public class AuthFilter implements Filter {
     private static final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     private static final List<String> WHITELIST = Arrays.asList(
-            "/api/register",
-            "/api/login"
+            "/api/v1/user/register",
+            "/api/v1/user/login"
     );
 
     private static final ObjectMapper objectMapper = new ObjectMapper();

@@ -9,7 +9,7 @@
 用法:
   python scripts/fetch_wiki.py "归并排序"              # 维基模式
   python scripts/fetch_wiki.py "归并排序" --ai         # 纯AI生成
-  python scripts/fetch_wiki.py -b scripts/keywords.txt --ai   # 批量AI生成
+  python scripts/fetch_wiki.py -b keywords.txt --ai   # 批量AI生成
 """
 import os, sys, re, argparse, requests
 from pathlib import Path
@@ -23,49 +23,160 @@ API_KEY = os.getenv("DEEPSEEK_API_KEY")
 API_URL = "https://api.deepseek.com/v1/chat/completions"
 WIKI_DATA = BASE_DIR / "wiki_data"
 
-# 代理配置：Clash/V2Ray 默认 7890 端口，不对可在 .env 设 HTTP_PROXY
+# 代理配置：Clash/V2Ray 默认 7890 端口，可在 .env 中设 WIKI_PROXY 覆盖
 PROXIES = {
-    "http": os.getenv("HTTP_PROXY", "http://127.0.0.1:7890"),
-    "https": os.getenv("HTTPS_PROXY", "http://127.0.0.1:7890"),
+    "http": os.getenv("WIKI_PROXY", "http://127.0.0.1:7897"),
+    "https": os.getenv("WIKI_PROXY", "http://127.0.0.1:7897"),
 }
 
 CAT_MAP = {
-    "排序":"algorithm","算法":"algorithm","搜索":"algorithm","树":"algorithm",
-    "图":"algorithm","链表":"algorithm","栈":"algorithm","队列":"algorithm",
-    "哈希":"algorithm","动态规划":"algorithm","导数":"math","积分":"math",
-    "极限":"math","级数":"math","傅里叶":"math","矩阵":"math","概率":"math",
-    "微分":"math","函数":"math","向量":"math",
+    # 算法
+    "排序":"algorithm","算法":"algorithm","搜索":"algorithm","递归":"algorithm",
+    "匹配":"algorithm","贪心":"algorithm","回溯":"algorithm","分治":"algorithm",
+    "指针":"algorithm","前缀":"algorithm",
+    # 数据结构
+    "树":"data-structures","链表":"data-structures","栈":"data-structures",
+    "队列":"data-structures","哈希":"data-structures","堆":"data-structures",
+    "表":"data-structures","数组":"data-structures","字符串":"data-structures",
+    "并查集":"data-structures","字典树":"data-structures","布隆":"data-structures",
+    # 图论
+    "图":"graph-theory","网络流":"graph-theory","回路":"graph-theory",
+    "路径":"graph-theory","连通":"graph-theory",
+    # 动态规划
+    "动态规划":"dynamic-programming","背包":"dynamic-programming",
+    "子序列":"dynamic-programming",
+    # 数学
+    "导数":"math","积分":"math","极限":"math","级数":"math",
+    "傅里叶":"math","微分":"math","函数":"math","泰勒":"math",
+    "格林":"math","梯度":"math","牛顿":"math","斯托克斯":"math",
+    # 线性代数
+    "矩阵":"linear-algebra","特征值":"linear-algebra","奇异值":"linear-algebra",
+    "行列式":"linear-algebra","线性":"linear-algebra","正交":"linear-algebra",
+    "对角":"linear-algebra","向量":"linear-algebra","PCA":"linear-algebra",
+    # 概率统计
+    "概率":"probability","正态":"probability","贝叶斯":"probability",
+    "大数":"probability","中心极限":"probability","假设检验":"probability",
+    "似然":"probability","马尔可夫":"probability","泊松":"probability",
+    "随机过程":"probability","协方差":"probability","蒙特卡洛":"probability",
+    "分布":"probability",
 }
 
 DIFF_MAP = {
+    # 入门
     "冒泡排序":"入门","插入排序":"入门","选择排序":"入门","二分查找":"入门",
-    "链表":"入门","栈":"入门","队列":"入门","导数":"入门","积分":"入门","极限":"入门",
-    "快速排序":"中等","归并排序":"中等","堆排序":"中等","二叉树":"中等",
-    "哈希表":"中等","广度优先搜索":"中等","深度优先搜索":"中等","矩阵":"中等",
-    "动态规划":"困难","傅里叶变换":"进阶",
+    "链表":"入门","栈":"入门","队列":"入门","数组":"入门","字符串":"入门",
+    "导数":"入门","积分":"入门","极限":"入门","前缀和":"入门",
+    "双指针":"入门","滑动窗口":"入门","二分答案":"入门",
+    # 中等
+    "快速排序":"中等","归并排序":"中等","堆排序":"中等","希尔排序":"中等",
+    "计数排序":"中等","桶排序":"中等","基数排序":"中等",
+    "二叉树":"中等","二叉搜索树":"中等","完全二叉树":"中等",
+    "哈希表":"中等","堆":"中等","优先队列":"中等","循环队列":"中等",
+    "双向链表":"中等","稀疏表":"中等",
+    "广度优先搜索":"中等","深度优先搜索":"中等","拓扑排序":"中等",
+    "贪心算法":"中等","分治算法":"中等","回溯算法":"中等",
+    "矩阵":"中等","行列式":"中等","线性变换":"中等","向量空间":"中等",
+    "级数":"中等","泰勒展开":"中等","偏导数":"中等",
+    "正态分布":"中等","贝叶斯定理":"中等","大数定律":"中等",
+    "最小生成树":"中等","最短路径":"中等","欧拉回路":"中等",
+    "KMP字符串匹配":"中等","Rabin-Karp算法":"中等",
+    # 困难
+    "动态规划":"困难","背包问题":"困难","编辑距离":"困难",
+    "红黑树":"困难","AVL树":"困难","B树":"困难","跳表":"困难",
+    "字典树":"困难","布隆过滤器":"困难",
+    "并查集":"困难","树状数组":"困难","线段树":"困难",
+    "Dijkstra算法":"困难","Bellman-Ford算法":"困难","Floyd-Warshall算法":"困难",
+    "傅里叶变换":"进阶","拉普拉斯变换":"困难",
+    "多重积分":"困难","微分方程":"困难",
+    "特征值":"困难","奇异值分解":"困难","PCA主成分分析":"困难",
+    "网络流":"困难","二分图匹配":"困难","强连通分量":"困难",
+    "马尔可夫链":"困难","随机过程":"困难",
+    "A星搜索算法":"困难","模拟退火算法":"困难","遗传算法":"困难",
+    "梯度下降":"困难","牛顿法":"中等",
 }
 
+# 基于拼音/中文字符的 slug 自动生成，映射表仅维护常见词条
 SLUG_MAP = {
     "冒泡排序":"bubble-sort","插入排序":"insertion-sort","选择排序":"selection-sort",
     "快速排序":"quick-sort","归并排序":"merge-sort","堆排序":"heap-sort",
-    "二分查找":"binary-search","二叉树":"binary-tree","链表":"linked-list",
-    "栈":"stack","队列":"queue","哈希表":"hash-table",
-    "广度优先搜索":"bfs","深度优先搜索":"dfs","动态规划":"dynamic-programming",
+    "希尔排序":"shell-sort","计数排序":"counting-sort","桶排序":"bucket-sort",
+    "基数排序":"radix-sort",
+    "二分查找":"binary-search","二分答案":"binary-answer",
+    "链表":"linked-list","双向链表":"doubly-linked-list",
+    "栈":"stack","队列":"queue","循环队列":"circular-queue",
+    "哈希表":"hash-table","堆":"heap","优先队列":"priority-queue",
+    "二叉树":"binary-tree","二叉搜索树":"binary-search-tree",
+    "完全二叉树":"complete-binary-tree",
+    "红黑树":"red-black-tree","AVL树":"avl-tree","B树":"b-tree",
+    "跳表":"skip-list","布隆过滤器":"bloom-filter",
+    "字典树":"trie","并查集":"union-find","树状数组":"fenwick-tree",
+    "线段树":"segment-tree","稀疏表":"sparse-table",
+    "广度优先搜索":"bfs","深度优先搜索":"dfs","拓扑排序":"topological-sort",
+    "贪心算法":"greedy","分治算法":"divide-and-conquer","回溯算法":"backtracking",
+    "动态规划":"dynamic-programming","背包问题":"knapsack",
+    "最长公共子序列":"lcs","最长递增子序列":"lis","编辑距离":"edit-distance",
+    "矩阵链乘法":"matrix-chain-multiplication",
+    "KMP字符串匹配":"kmp","Rabin-Karp算法":"rabin-karp",
+    "最短路径":"shortest-path","最小生成树":"minimum-spanning-tree",
+    "网络流":"network-flow","二分图匹配":"bipartite-matching",
+    "欧拉回路":"eulerian-circuit","哈密顿路径":"hamiltonian-path",
+    "强连通分量":"scc","双指针":"two-pointers","滑动窗口":"sliding-window",
+    "前缀和":"prefix-sum",
+    "A星搜索算法":"a-star","模拟退火算法":"simulated-annealing",
+    "遗传算法":"genetic-algorithm",
     "导数":"derivative","积分":"integral","极限":"limit",
-    "傅里叶变换":"fourier-transform","矩阵":"matrix",
+    "泰勒展开":"taylor-series","偏导数":"partial-derivative",
+    "多重积分":"multiple-integral","微分方程":"differential-equation",
+    "傅里叶变换":"fourier-transform","傅里叶级数":"fourier-series",
+    "拉普拉斯变换":"laplace-transform","级数":"series",
+    "格林公式":"greens-theorem","斯托克斯定理":"stokes-theorem",
+    "梯度下降":"gradient-descent","牛顿法":"newtons-method",
+    "矩阵":"matrix","特征值":"eigenvalue","奇异值分解":"svd",
+    "行列式":"determinant","线性变换":"linear-transformation",
+    "正交基":"orthogonal-basis","最小二乘法":"least-squares",
+    "PCA主成分分析":"pca","向量空间":"vector-space",
+    "线性方程组":"linear-equations","对角化":"diagonalization",
+    "二次型":"quadratic-form",
+    "概率论":"probability-theory","正态分布":"normal-distribution",
+    "贝叶斯定理":"bayes-theorem","大数定律":"law-of-large-numbers",
+    "中心极限定理":"central-limit-theorem",
+    "假设检验":"hypothesis-testing","最大似然估计":"mle",
+    "马尔可夫链":"markov-chain","泊松分布":"poisson-distribution",
+    "随机过程":"stochastic-process","协方差":"covariance",
+    "蒙特卡洛方法":"monte-carlo",
 }
 
 
-def fetch_wiki(title):
-    """从维基百科获取原文（需要代理）"""
+def fetch_wiki(title, lang="zh"):
+    """从维基百科获取原文
+    :param title: 词条标题
+    :param lang: zh=中文维基，en=英文维基
+    """
+    api_url = f"https://{lang}.wikipedia.org/w/api.php"
+    headers = {"User-Agent": "CSVisualLearn/1.0 (educational project; contact@example.com)"}
+
     try:
-        r = requests.get("https://zh.wikipedia.org/w/api.php",
+        r = requests.get(api_url,
             params={
                 "action":"query","format":"json","titles":title,
                 "prop":"extracts","explaintext":True,
             },
+            headers=headers,
             proxies=PROXIES, timeout=30,
         )
+        # 429 限流时等待后重试一次
+        if r.status_code == 429:
+            import time as _time
+            print(f"  {lang}维基限流(429)，等待3秒后重试...")
+            _time.sleep(3)
+            r = requests.get(api_url,
+                params={
+                    "action":"query","format":"json","titles":title,
+                    "prop":"extracts","explaintext":True,
+                },
+                headers=headers,
+                proxies=PROXIES, timeout=30,
+            )
         r.raise_for_status()
         data = r.json()
         for pid, page in data["query"]["pages"].items():
@@ -76,13 +187,28 @@ def fetch_wiki(title):
                 line = line.strip()
                 if not line:
                     continue
-                if line.startswith(("参考","参见","外部链接","注释","引用")):
+                if line.startswith(("参考","参见","外部链接","注释","引用",
+                                   "References","See also","External links","Notes","Citations")):
                     break
                 lines.append(line)
             return "\n\n".join(lines)
     except Exception as e:
-        print(f"  维基获取失败: {e}")
+        print(f"  {lang}维基获取失败: {e}")
         return ""
+
+
+def fetch_wiki_with_fallback(title):
+    """先尝试中文维基，失败则回退到英文维基 + AI翻译"""
+    # 1. 尝试中文维基
+    raw = fetch_wiki(title, lang="zh")
+    if raw:
+        return raw, "zh"
+    # 2. 回退到英文维基
+    print("  中文维基无结果，尝试英文维基...")
+    raw = fetch_wiki(title, lang="en")
+    if raw:
+        return raw, "en"
+    return "", ""
 
 
 def call_llm(messages, max_tokens=2500):
@@ -101,18 +227,30 @@ def call_llm(messages, max_tokens=2500):
         return ""
 
 
-def refine_from_wiki(title, raw, category):
-    """维基原文 + AI 提炼为五段式"""
-    sys_prompt = (
-        "你是CS/数学专业教材编辑。将维基百科原文整理为标准五段式词条：\n"
-        f"1.定义：{title}的准确定义与核心公式\n"
-        "2.核心原理：核心思想、工作机制、关键性质(3-5点)\n"
-        "3.过程/示例：用具体小例子演示步骤\n"
-        "4.复杂度/性质分析：时间/空间复杂度、稳定性、收敛性等\n"
-        "5.常见误区：学习者最容易混淆或出错的3-5个点\n"
-        "要求：专业准确，适合大学生；去掉历史、人物、争议等无关内容；"
-        "800-1200字；直接输出Markdown正文，不要任何前言。"
-    )
+def refine_from_wiki(title, raw, category, from_english=False):
+    """维基原文 + AI 整理为五段式"""
+    if from_english:
+        sys_prompt = (
+            "你是CS/数学专业教材编辑。将英文维基百科原文翻译并整理为标准五段式中文词条：\n"
+            f"1.定义：{title}的准确定义与核心公式\n"
+            "2.核心原理：核心思想、工作机制、关键性质(3-5点)\n"
+            "3.过程/示例：用具体小例子演示步骤\n"
+            "4.复杂度/性质分析：时间/空间复杂度、稳定性、收敛性等\n"
+            "5.常见误区：学习者最容易混淆或出错的3-5个点\n"
+            "要求：专业准确，适合大学生；去掉历史、人物、争议等无关内容；"
+            "从英文翻译为中文；800-1200字；直接输出Markdown正文，不要任何前言。"
+        )
+    else:
+        sys_prompt = (
+            "你是CS/数学专业教材编辑。将维基百科原文整理为标准五段式词条：\n"
+            f"1.定义：{title}的准确定义与核心公式\n"
+            "2.核心原理：核心思想、工作机制、关键性质(3-5点)\n"
+            "3.过程/示例：用具体小例子演示步骤\n"
+            "4.复杂度/性质分析：时间/空间复杂度、稳定性、收敛性等\n"
+            "5.常见误区：学习者最容易混淆或出错的3-5个点\n"
+            "要求：专业准确，适合大学生；去掉历史、人物、争议等无关内容；"
+            "800-1200字；直接输出Markdown正文，不要任何前言。"
+        )
     return call_llm([
         {"role":"system","content":sys_prompt},
         {"role":"user","content":f"词条名称：{title}\n分类：{category}\n\n维基百科原文：\n{raw[:5000]}"},
@@ -160,13 +298,17 @@ def process(title, category=None, use_ai=False):
     if use_ai:
         content = generate_direct(title, cat)
     else:
-        raw = fetch_wiki(title)
+        raw, lang = fetch_wiki_with_fallback(title)
         if not raw:
-            print("  维基获取失败，自动切换为纯AI生成模式")
+            print("  维基获取失败（中英文均无结果），自动切换为纯AI生成模式")
             content = generate_direct(title, cat)
             source = "AI生成（维基获取失败，自动降级）"
+        elif lang == "en":
+            print(f"  英文维基原文: {len(raw)}字，AI翻译整理中...")
+            content = refine_from_wiki(title, raw, cat, from_english=True)
+            source = "英文维基百科(CC BY-SA) + AI翻译整理"
         else:
-            print(f"  维基原文: {len(raw)}字")
+            print(f"  中文维基原文: {len(raw)}字")
             content = refine_from_wiki(title, raw, cat)
             source = "维基百科(CC BY-SA) + AI整理"
 
@@ -175,7 +317,16 @@ def process(title, category=None, use_ai=False):
         return False
     print(f"  生成内容: {len(content)}字")
 
-    slug = SLUG_MAP.get(title, re.sub(r"[^\w-]", "", title.lower().replace(" ", "-")))
+    # slug 生成：优先查映射表，否则自动从标题生成
+    slug = SLUG_MAP.get(title)
+    if not slug:
+        # 尝试用中文标题生成拼音式 slug（去掉中文，保留英文/数字）
+        import re as _re
+        slug = _re.sub(r"[^\w-]", "", title.lower().replace(" ", "-"))
+        if not slug or slug.isdigit():
+            # 全中文标题，用 MD5 前8位
+            import hashlib
+            slug = hashlib.md5(title.encode()).hexdigest()[:8]
     diff = DIFF_MAP.get(title, "中等")
 
     cat_dir = WIKI_DATA / cat

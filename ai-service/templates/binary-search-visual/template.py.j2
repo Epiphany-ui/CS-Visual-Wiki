@@ -1,0 +1,105 @@
+from manim import *
+import numpy as np
+
+class BinarySearchVisual(Scene):
+    def construct(self):
+        # 参数配置
+        ARRAY_SIZE = {{ array_size }}
+        TARGET = {{ target }}
+        SPEED = {{ speed }}
+        SHOW_POINTERS = {{ 'True' if show_pointers else 'False' }}
+        RUN_TIME = 0.6 / SPEED
+
+        # 生成有序数组
+        arr = list(range(1, ARRAY_SIZE + 1))
+        max_val = max(arr)
+
+        # 标题
+        title = Text(f"Binary Search (target = {TARGET})", font_size=32).to_edge(UP)
+        self.play(Write(title), run_time=0.5)
+
+        # 创建柱状图表示数组
+        bars = VGroup()
+        bar_labels = VGroup()
+        bar_width = min(0.6, 12.0 / ARRAY_SIZE)
+        for i, val in enumerate(arr):
+            bar = Rectangle(
+                width=bar_width, height=0.4,
+                fill_color=BLUE, fill_opacity=0.7,
+                stroke_color=WHITE
+            )
+            bar.move_to(DOWN * 2 + RIGHT * (i - ARRAY_SIZE / 2 + 0.5) * bar_width)
+            bars.add(bar)
+            label = Text(str(val), font_size=14).move_to(bar.get_center())
+            bar_labels.add(label)
+
+        bars.move_to(ORIGIN + DOWN * 0.5)
+        for label, bar in zip(bar_labels, bars):
+            label.move_to(bar.get_center())
+
+        self.play(Create(bars), Write(bar_labels), run_time=1.0)
+
+        # 二分查找算法
+        left, right = 0, len(arr) - 1
+        found = False
+        step = 0
+
+        # 指针标注
+        left_arrow = Arrow(ORIGIN, ORIGIN, color=GREEN, stroke_width=3)
+        right_arrow = Arrow(ORIGIN, ORIGIN, color=RED, stroke_width=3)
+        mid_arrow = Arrow(ORIGIN, ORIGIN, color=YELLOW, stroke_width=3)
+        status_text = Text("Starting search...", font_size=24, color=WHITE).next_to(title, DOWN)
+
+        if SHOW_POINTERS:
+            self.play(Write(status_text))
+
+        while left <= right:
+            mid = (left + right) // 2
+            step += 1
+
+            # 更新指针位置
+            l_pos = bars[left].get_bottom() + DOWN * 0.3
+            r_pos = bars[right].get_bottom() + DOWN * 0.3
+            m_pos = bars[mid].get_bottom() + DOWN * 0.3
+
+            new_left = Arrow(l_pos + LEFT * 0.15, l_pos, color=GREEN, stroke_width=3, max_tip_length_to_length_ratio=0.3)
+            new_right = Arrow(r_pos + RIGHT * 0.15, r_pos, color=RED, stroke_width=3, max_tip_length_to_length_ratio=0.3)
+            new_mid = Arrow(m_pos + LEFT * 0.15, m_pos, color=YELLOW, stroke_width=3, max_tip_length_to_length_ratio=0.3)
+
+            self.play(
+                Transform(left_arrow if hasattr(self, 'prev_left') else left_arrow, new_left),
+                Transform(right_arrow if hasattr(self, 'prev_right') else right_arrow, new_right),
+                Transform(mid_arrow if hasattr(self, 'prev_mid') else mid_arrow, new_mid),
+                run_time=RUN_TIME
+            )
+            self.prev_left, self.prev_right, self.prev_mid = new_left, new_right, new_mid
+
+            # 高亮当前检查的元素
+            highlight = bars[mid].copy().set_fill(YELLOW, opacity=0.8)
+            self.play(Transform(bars[mid], highlight), run_time=RUN_TIME * 0.5)
+
+            new_status = Text(f"Step {step}: arr[{mid}] = {arr[mid]}", font_size=24, color=YELLOW)
+            self.play(Transform(status_text, new_status), run_time=RUN_TIME * 0.5)
+            status_text = new_status
+
+            if arr[mid] == TARGET:
+                found = True
+                success_text = Text(f"Found {TARGET} at index {mid}!", font_size=28, color=GREEN).next_to(title, DOWN)
+                self.play(Transform(status_text, success_text), bars[mid].animate.set_fill(GREEN, opacity=0.9), run_time=1.0)
+                break
+            elif arr[mid] < TARGET:
+                # 高亮左侧已排除区域
+                for i in range(left, mid + 1):
+                    self.play(bars[i].animate.set_fill(DARK_GRAY, opacity=0.4), run_time=RUN_TIME * 0.3 / (mid - left + 1))
+                left = mid + 1
+            else:
+                # 高亮右侧已排除区域
+                for i in range(mid, right + 1):
+                    self.play(bars[i].animate.set_fill(DARK_GRAY, opacity=0.4), run_time=RUN_TIME * 0.3 / (right - mid + 1))
+                right = mid - 1
+
+        if not found:
+            fail_text = Text(f"{TARGET} not found in array", font_size=28, color=RED).next_to(title, DOWN)
+            self.play(Transform(status_text, fail_text), run_time=1.0)
+
+        self.wait(1.5)
