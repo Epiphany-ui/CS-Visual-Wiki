@@ -42,6 +42,7 @@ from services.progress_service import (
     get_progress, set_progress, subscribe_progress, unsubscribe_progress,
     list_videos, delete_video, list_tasks, delete_task, get_task_count,
     save_to_gallery, is_in_gallery, get_gallery_filenames,
+    save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
 )
 from services.config import settings
 from services.exceptions import (
@@ -756,8 +757,17 @@ async def api_videos_list(gallery: bool = False):
     """
     列出所有已生成的视频文件。
     ?gallery=true 时仅返回已收藏到画廊的视频。
+    每条记录会合并视频元数据（标题等）。
     """
     videos = list_videos()
+    metas = get_all_video_metas()
+    # 合并元数据
+    for v in videos:
+        fn = v.get("filename", "")
+        meta = metas.get(fn, {})
+        v["title"] = (meta.get("title") or b"").decode("utf-8") if isinstance(meta.get("title"), bytes) else (meta.get("title") or fn)
+        v["username"] = (meta.get("username") or b"").decode("utf-8") if isinstance(meta.get("username"), bytes) else (meta.get("username") or "匿名")
+        v["created_by"] = v.get("username", "匿名")
     if gallery:
         saved = get_gallery_filenames()
         videos = [v for v in videos if v.get("filename") in saved]
@@ -774,6 +784,17 @@ async def api_videos_save(filename: str):
         return error_response("非法文件名")
     saved = save_to_gallery(filename)
     return success_response({"filename": filename, "saved": saved}, "已收藏" if saved else "已取消收藏")
+
+
+@app.patch("/api/videos/{filename}/title")
+async def api_videos_rename(filename: str, title: str = ""):
+    """修改视频标题（用户自定义命名）"""
+    if not _is_safe_filename(filename):
+        return error_response("非法文件名")
+    if not title or not title.strip():
+        return error_response("标题不能为空")
+    ok = update_video_title(filename, title.strip())
+    return success_response({"filename": filename, "title": title.strip()}, "标题已更新" if ok else "更新失败")
 
 
 @app.delete("/api/videos/{filename}")

@@ -96,8 +96,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     静态文件（/videos/ /frames/）不做限流。
     """
 
-    # 无需限流的路径（静态资源、文档）
-    EXEMPT_PATHS = {"/videos", "/frames", "/docs", "/openapi.json", "/redoc"}
+    # 无需限流的路径（静态资源、文档、调试接口）
+    EXEMPT_PATHS = {"/videos", "/frames", "/docs", "/openapi.json", "/redoc", "/api/debug", "/health"}
 
     # 生成类路径前缀（更严格的限制）
     GENERATE_PATHS = {"/api/generate", "/api/async", "/api/render", "/api/ai/fix-code"}

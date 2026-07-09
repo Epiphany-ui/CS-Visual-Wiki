@@ -20,7 +20,7 @@ echo.
 REM --- 2. FastAPI ---
 echo [2/3] Starting API server (port 8000)...
 cd /d "%ROOT%ai-service"
-start "API-Server" cmd /c ""%CONDA_ENV%\python.exe" -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+start "API-Server" cmd /c ""%CONDA_ENV%\python.exe" main.py"
 echo   API server started (http://localhost:8000)
 echo.
 

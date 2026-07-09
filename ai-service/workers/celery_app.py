@@ -20,7 +20,7 @@ from celery import Celery
 from ai_engine import render_manim_animation, run_full_pipeline
 from services.config import settings
 from services.template_service import template_service
-from services.progress_service import set_progress
+from services.progress_service import set_progress, save_video_meta
 from services.logging_config import get_logger
 
 logger = get_logger("celery")
@@ -77,6 +77,9 @@ def render_code_task(self, code: str):
         success, log, video_path = render_manim_animation(code, progress_callback=on_progress)
 
         if success:
+            fn = video_path.replace("/videos/", "") if video_path else ""
+            if fn:
+                save_video_meta(fn, title=f"Manim 渲染 {fn[:8]}")
             set_progress(task_id, state="SUCCESS", progress=100,
                          message="渲染完成", video_path=video_path, log=log)
         else:
@@ -99,11 +102,16 @@ def generate_full_task(self, requirement: str, max_retry: int = 3):
     set_progress(task_id, state="STARTED", progress=0, message="任务已接收，AI 正在生成代码...")
 
     try:
-        result = run_full_pipeline(requirement, max_retry=max_retry)
+        on_progress = _make_render_callback(task_id)
+        result = run_full_pipeline(requirement, max_retry=max_retry, progress_callback=on_progress)
 
         if result.get("success"):
+            vp = result.get("video_path", "")
+            fn = vp.replace("/videos/", "") if vp else ""
+            if fn:
+                save_video_meta(fn, title=requirement[:80])
             set_progress(task_id, state="SUCCESS", progress=100,
-                         message="生成完成", video_path=result.get("video_path", ""),
+                         message="生成完成", video_path=vp,
                          log=result.get("log", ""), code=result.get("code", ""))
         else:
             set_progress(task_id, state="FAILURE", progress=0,

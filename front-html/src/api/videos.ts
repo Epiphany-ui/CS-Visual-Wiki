@@ -34,6 +34,13 @@ export const videosApi = {
     })
   },
 
+  /** 修改视频标题 */
+  renameVideo(filename: string, title: string) {
+    return pythonClient.patch<ApiResponse<{ filename: string; title: string }>>(`/api/videos/${filename}/title`, null, {
+      params: { title },
+    })
+  },
+
   /** 删除视频 */
   deleteVideo(filename: string) {
     return pythonClient.delete(`/api/videos/${filename}`)
