@@ -95,7 +95,8 @@ def generate_embedding(text: str) -> List[float]:
                 "model": EMBEDDING_MODEL_NAME,
                 "input": text
             },
-            timeout=API_REQUEST_TIMEOUT
+            timeout=API_REQUEST_TIMEOUT,
+            proxies={"http": None, "https": None},  # 不走系统代理
         )
         response.raise_for_status()
         return response.json().get("embeddings", [[]])[0]

@@ -44,18 +44,22 @@ export function useSSE() {
       }
     }
 
-    eventSource.onerror = (err) => {
-      console.error(`SSE error (retry ${retryCount}/${MAX_RETRIES}):`, err)
-      onError?.(err)
+    eventSource.onerror = () => {
+      // 已收到终态 → 这是服务端关闭连接触发的 onerror，不重连
+      if (retryCount >= MAX_RETRIES) {
+        onError?.(new Event('done'))
+        return
+      }
 
-      // 先关闭当前连接
+      console.error(`SSE error (retry ${retryCount}/${MAX_RETRIES})`)
+      onError?.(new Event('error'))
+
       if (eventSource) {
         eventSource.close()
         eventSource = null
       }
 
-      // 自动重连（最多 MAX_RETRIES 次）
-      if (retryCount < MAX_RETRIES && savedTaskId && savedOnMessage) {
+      if (savedTaskId && savedOnMessage) {
         retryCount++
         console.log(`SSE reconnecting in ${RETRY_DELAY_MS}ms (attempt ${retryCount}/${MAX_RETRIES})...`)
         retryTimer = setTimeout(() => {
