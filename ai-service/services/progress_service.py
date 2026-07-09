@@ -162,12 +162,11 @@ def save_video_meta(filename: str, title: str = "", username: str = ""):
     try:
         r = _get_redis()
         key = f"{VIDEO_META_PREFIX}:{filename}"
-        r.hset(key, mapping={
-            "title": title or filename,
-            "created_at": datetime.now().isoformat(),
-            "username": username or "匿名",
-        })
+        r.hset(key, "title", title or filename)
+        r.hset(key, "created_at", datetime.now().isoformat())
+        r.hset(key, "username", username or "匿名")
         r.expire(key, 86400 * 30)  # 30 天过期
+        _maybe_bgsave()
     except Exception:
         pass
 
@@ -191,7 +190,9 @@ def get_all_video_metas() -> dict:
         while True:
             cursor, keys = r.scan(cursor, match=f"{VIDEO_META_PREFIX}:*", count=200)
             for key in keys:
-                fname = key.decode("utf-8").replace(f"{VIDEO_META_PREFIX}:", "")
+                # decode_responses=True 时 key 已是 str，兼容 bytes
+                ks = key.decode("utf-8") if isinstance(key, bytes) else key
+                fname = ks.replace(f"{VIDEO_META_PREFIX}:", "")
                 result[fname] = r.hgetall(key) or {}
             if cursor == 0:
                 break
@@ -210,6 +211,7 @@ def update_video_title(filename: str, new_title: str) -> bool:
             return True
         # 如果元数据不存在，创建
         save_video_meta(filename, title=new_title)
+        _maybe_bgsave()
         return True
     except Exception:
         return False
@@ -218,6 +220,15 @@ def update_video_title(filename: str, new_title: str) -> bool:
 # ===================== 画廊收藏管理 =====================
 
 GALLERY_KEY = "cs:gallery"  # Redis Set: 已收藏的视频文件名
+
+
+def _maybe_bgsave():
+    """在关键写入后手动触发 BGSAVE（Windows 上禁用自动 save 以避免断连 Celery）"""
+    try:
+        r = _get_redis()
+        r.bgsave()
+    except Exception:
+        pass
 
 
 def save_to_gallery(filename: str) -> bool:
@@ -232,6 +243,7 @@ def save_to_gallery(filename: str) -> bool:
             return False
         else:
             r.sadd(GALLERY_KEY, filename)
+            _maybe_bgsave()
             return True
     except Exception:
         return False

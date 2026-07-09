@@ -38,7 +38,7 @@ CODER_MODEL_NAME = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 LLM_TEMPERATURE: float = 0.1
 LLM_TOP_P: float = 0.85
-API_REQUEST_TIMEOUT: int = 180
+API_REQUEST_TIMEOUT: tuple = (10, 120)  # (连接超时10s, 读取超时120s)
 
 # --- Ollama 本地服务 ---
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -181,13 +181,13 @@ def deepseek_chat_request(messages: List[Dict]) -> Tuple[bool, str]:
             if not content or not content.strip():
                 return False, "❌ 模型返回空内容，请检查模型名或提示词"
             return True, content
-        except requests.exceptions.Timeout:
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, ConnectionError, TimeoutError) as e:
             if attempt < max_retry - 1:
                 wait_time = 2 ** attempt
-                logger.warning("DeepSeek API超时，第%d次重试，等待%d秒...", attempt + 1, wait_time)
+                logger.warning("DeepSeek API超时/连接失败 (attempt %d/%d)，等待%d秒后重试...", attempt + 1, max_retry, wait_time)
                 time.sleep(wait_time)
                 continue
-            return False, f"❌ DeepSeek API连续{max_retry}次读取超时，请稍后重试"
+            return False, f"❌ DeepSeek API连续{max_retry}次超时/连接失败，请稍后重试"
         except Exception as e:
             return False, f"❌ DeepSeek API调用失败：{str(e)}"
     return False, "❌ DeepSeek API达到最大重试次数"
