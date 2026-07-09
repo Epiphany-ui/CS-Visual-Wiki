@@ -56,7 +56,36 @@ function getTitle(v: VideoFile & { title?: string }) {
   return (v as any).title || v.filename
 }
 
-onMounted(() => { loadAll().then(() => loadStars()) })
+// 补漏：检查 pending tasks 中已完成但未加入"我的作品"的视频
+async function syncPendingTasks() {
+  try {
+    const pending: string[] = JSON.parse(localStorage.getItem('cs:pending-tasks') || '[]')
+    if (!pending.length) return
+    const works: string[] = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
+    let changed = false
+    for (const tid of pending.slice(0, 10)) {
+      try {
+        const res = await fetch(`http://localhost:8000/api/tasks/${tid}`)
+        const data = await res.json()
+        const vp = data?.data?.video_path || ''
+        const fn = vp.replace('/videos/', '')
+        if (fn && data?.data?.state === 'SUCCESS' && !works.includes(fn)) {
+          works.unshift(fn)
+          changed = true
+        }
+      } catch { /* skip */ }
+    }
+    if (changed) {
+      localStorage.setItem('cs:my-works', JSON.stringify(works.slice(0, 50)))
+      // 重新加载全部列表以更新标题
+      await loadAll()
+    }
+    // 清理已完成的 pending tasks
+    localStorage.setItem('cs:pending-tasks', JSON.stringify(pending.slice(0, 5)))
+  } catch { /* ignore */ }
+}
+
+onMounted(() => { loadAll().then(() => loadStars()).then(() => syncPendingTasks()) })
 watch(() => route.query.tab, (t) => {
   if (t === 'all' || t === 'my-works' || t === 'stars') activeTab.value = t
 })
@@ -82,7 +111,7 @@ watch(() => route.query.tab, (t) => {
     <div class="gallery-grid" v-loading="loading">
       <div v-for="v in videos" :key="v.filename" class="g-card glass-card" @click="router.push(`/gallery/${v.filename}`)">
         <div class="g-thumb">
-          <video :src="videosApi.getPlayUrl(v.filename)" preload="metadata" class="g-video" />
+          <video :src="videosApi.getPlayUrl(v.filename)" preload="none" loading="lazy" class="g-video" />
           <div class="g-play"><el-icon :size="32"><VideoPlay /></el-icon></div>
         </div>
         <div class="g-info">

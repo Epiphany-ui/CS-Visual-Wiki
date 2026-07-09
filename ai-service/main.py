@@ -117,14 +117,14 @@ async def startup_event():
     # 自动修复 Windows Redis 常见问题：
     # 1. RDB 目录无写权限 → 重定向到项目目录
     # 2. stop-writes-on-bgsave-error=yes → 持久化失败时拒绝写操作
+    # 3. save 配置 → 确保自动持久化生效
     try:
         import redis as _redis_lib
         r = _redis_lib.Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=3)
-        # 修复 1: 把 RDB 文件写到项目目录（C:\Program Files\Redis 需要管理员权限）
         _project_dir = str(Path(__file__).resolve().parent)
         r.config_set("dir", _project_dir)
-        # 修复 2: 持久化失败时降级为警告，不拒绝写入
         r.config_set("stop-writes-on-bgsave-error", "no")
+        r.config_set("save", "")  # Windows 上禁用自动 BGSAVE（fork 会断连 Celery），改为手动触发
         logger.info("[startup] Redis 配置已自动修复 (dir=%s)", _project_dir)
     except Exception as _e:
         logger.warning("[startup] 无法自动配置 Redis: %s（如 Redis 未安装请忽略）", _e)

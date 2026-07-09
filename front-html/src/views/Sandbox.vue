@@ -62,7 +62,7 @@ function getLastError(): string {
 }
 
 function restoreTaskFromSession() {
-  const tid = sessionStorage.getItem('cs:active-task')
+  const tid = localStorage.getItem('cs:active-task')
   if (!tid) return
 
   // 先检查任务是否已经完成（通过 taskStore 缓存的状态）
@@ -99,6 +99,13 @@ function restoreTaskFromSession() {
       stopSmoothProgress(); progress.value = 100; generating.value = false; disconnect(); return
     }
     const evt = data as SSETaskEvent
+    // 恢复路径：UNKNOWN 表示任务已过期（Redis 中不存在）→ 清理
+    if (evt.state === 'UNKNOWN') {
+      stopSmoothProgress(); generating.value = false; disconnect()
+      localStorage.removeItem('cs:active-task')
+      progressMsg.value = '任务已过期，请重新开始'
+      return
+    }
     progressMsg.value = evt.message
     if ((evt as any).code) code.value = (evt as any).code
     if (evt.video_path) {
@@ -115,10 +122,10 @@ function restoreTaskFromSession() {
     taskStore.updateProgress(evt)
     if (evt.state === 'SUCCESS') {
       stopSmoothProgress(); progress.value = 100; generating.value = false; disconnect()
-      sessionStorage.removeItem('cs:active-task')
+      localStorage.removeItem('cs:active-task')
     } else if (evt.state === 'FAILURE') {
       stopSmoothProgress(); generating.value = false; disconnect()
-      sessionStorage.removeItem('cs:active-task')
+      localStorage.removeItem('cs:active-task')
     }
   }, () => { stopSmoothProgress(); generating.value = false })
 }
@@ -173,7 +180,15 @@ async function startAsyncTask(apiCall: () => Promise<any>) {
     const taskId = res.data.data?.task_id
     if (taskId) {
       _activeTaskId = taskId
-      sessionStorage.setItem('cs:active-task', taskId)
+      localStorage.setItem('cs:active-task', taskId)
+      // 记录到待处理列表，画廊"我的作品"可据此补漏
+      try {
+        const pending = JSON.parse(localStorage.getItem('cs:pending-tasks') || '[]')
+        if (!pending.includes(taskId)) {
+          pending.unshift(taskId)
+          localStorage.setItem('cs:pending-tasks', JSON.stringify(pending.slice(0, 20)))
+        }
+      } catch { /* ignore */ }
       taskStore.startTask(taskId)
       connect(taskId, (data) => {
         if ((data as SSEDoneEvent).type === 'done') {
@@ -197,11 +212,11 @@ async function startAsyncTask(apiCall: () => Promise<any>) {
         if (evt.state === 'SUCCESS') {
           stopSmoothProgress(); progress.value = 100
           generating.value = false; disconnect()
-          sessionStorage.removeItem('cs:active-task')
+          localStorage.removeItem('cs:active-task')
         } else if (evt.state === 'FAILURE') {
           stopSmoothProgress()
           generating.value = false; disconnect()
-          sessionStorage.removeItem('cs:active-task')
+          localStorage.removeItem('cs:active-task')
         }
       }, () => { stopSmoothProgress(); generating.value = false })
     }
