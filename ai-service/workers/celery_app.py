@@ -7,6 +7,7 @@ Celery异步任务配置
 Windows上的启动命令:celery -A workers.celery_app worker --loglevel=info -P solo
 因为Celery 在 Windows 上的已知兼容性问题——billiard 的多进程池和 Windows 的信号机制不兼容，所以Windows上串行运行
 """
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,11 +18,33 @@ if str(_AI_SERVICE_DIR) not in sys.path:
     sys.path.insert(0, str(_AI_SERVICE_DIR))
 
 from celery import Celery
-from ai_engine import render_manim_animation, run_full_pipeline
+from ai_engine import render_manim_animation, run_full_pipeline, extract_scene_class_name
 from services.config import settings
 from services.template_service import template_service
-from services.progress_service import set_progress, save_video_meta
+from services.progress_service import set_progress, get_progress, save_video_meta
 from services.logging_config import get_logger
+
+_VIDEO_DIR = Path(__file__).resolve().parent.parent / "outputs" / "videos"
+
+
+def _generate_poster(video_path: str):
+    """用 ffmpeg 截取视频第 2 秒帧作为封面缩略图"""
+    if not video_path:
+        return
+    try:
+        fn = video_path.replace("/videos/", "")
+        video_file = _VIDEO_DIR / fn
+        poster_file = _VIDEO_DIR / f"{Path(fn).stem}.jpg"
+        if not video_file.exists() or poster_file.exists():
+            return
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(video_file), "-ss", "2", "-vframes", "1",
+             "-q:v", "3", str(poster_file)],
+            capture_output=True, timeout=15,
+            encoding="utf-8", errors="replace",
+        )
+    except Exception:
+        pass  # 缩略图生成失败不影响主流程
 
 logger = get_logger("celery")
 
@@ -79,12 +102,14 @@ def render_code_task(self, code: str):
         if success:
             fn = video_path.replace("/videos/", "") if video_path else ""
             if fn:
-                save_video_meta(fn, title=f"Manim 渲染 {fn[:8]}")
+                scene = extract_scene_class_name(code) or "Manim"
+                _generate_poster(video_path)
+                save_video_meta(fn, title=f"{scene} 渲染")
             set_progress(task_id, state="SUCCESS", progress=100,
-                         message="渲染完成", video_path=video_path, log=log)
+                         message="渲染完成", video_path=video_path, log=log, code=code)
         else:
             set_progress(task_id, state="FAILURE", progress=0,
-                         message="渲染失败", log=log)
+                         message="渲染失败", log=log, code=code)
 
         return {"success": success, "code": code, "log": log, "video_path": video_path}
     except RETRYABLE_EXCEPTIONS as e:
@@ -92,7 +117,7 @@ def render_code_task(self, code: str):
         self.retry(exc=e, countdown=5)
     except Exception as e:
         set_progress(task_id, state="FAILURE", progress=0, message=str(e))
-        logger.exception("render_code_task 不可重试错误: %s", e)
+        logger.exception("celery_task 不可重试错误: %s", e)
 
 
 @celery_app.task(bind=True, max_retries=2)
@@ -105,17 +130,21 @@ def generate_full_task(self, requirement: str, max_retry: int = 3):
         on_progress = _make_render_callback(task_id)
         result = run_full_pipeline(requirement, max_retry=max_retry, progress_callback=on_progress)
 
+        vp = result.get("video_path", "")
+        code_str = result.get("code", "")
         if result.get("success"):
-            vp = result.get("video_path", "")
             fn = vp.replace("/videos/", "") if vp else ""
             if fn:
+                _generate_poster(video_path)
                 save_video_meta(fn, title=requirement[:80])
             set_progress(task_id, state="SUCCESS", progress=100,
                          message="生成完成", video_path=vp,
-                         log=result.get("log", ""), code=result.get("code", ""))
+                         log=result.get("log", ""), code=code_str)
         else:
+            # 失败时也传递代码，让用户可以在沙箱中手动修复
             set_progress(task_id, state="FAILURE", progress=0,
-                         message="生成失败", log=result.get("log", ""))
+                         message="生成失败", log=result.get("log", ""),
+                         code=code_str)
 
         return result
     except RETRYABLE_EXCEPTIONS as e:
@@ -123,12 +152,13 @@ def generate_full_task(self, requirement: str, max_retry: int = 3):
         self.retry(exc=e, countdown=5)
     except Exception as e:
         set_progress(task_id, state="FAILURE", progress=0, message=str(e))
-        logger.exception("render_code_task 不可重试错误: %s", e)
+        logger.exception("celery_task 不可重试错误: %s", e)
 
 
 @celery_app.task(bind=True, max_retries=2)
 def render_template_task(self, template_id: str, params: dict):
-    """异步模板渲染任务"""
+    """异步模板渲染任务（带代码缓存：相同代码跳过渲染）"""
+    import hashlib
     task_id = self.request.id
     set_progress(task_id, state="STARTED", progress=0,
                  message=f"正在生成模板 '{template_id}' 的代码...")
@@ -140,6 +170,16 @@ def render_template_task(self, template_id: str, params: dict):
             set_progress(task_id, state="FAILURE", progress=0, message=f"模板生成失败: {code}")
             return {"success": False, "error": code}
 
+        # 2. 缓存检查：相同模板+参数 → 跳过渲染
+        import json
+        cache_key = hashlib.md5(f"{template_id}:{json.dumps(params, sort_keys=True)}".encode()).hexdigest()[:16]
+        cached = get_progress(f"tpl:{cache_key}")
+        if cached.get("video_path"):
+            vp = cached["video_path"]
+            set_progress(task_id, state="SUCCESS", progress=100,
+                         message="渲染完成（缓存命中）", video_path=vp, log="", code=code)
+            return {"success": True, "code": code, "log": "缓存命中", "video_path": vp}
+
         set_progress(task_id, state="STARTED", progress=10, message="代码已生成，开始渲染...")
 
         # 2. 渲染
@@ -147,11 +187,20 @@ def render_template_task(self, template_id: str, params: dict):
         success, log, video_path = render_manim_animation(code, progress_callback=on_progress)
 
         if success:
+            fn = video_path.replace("/videos/", "") if video_path else ""
+            if fn:
+                tpl = template_service.get_template_detail(template_id)
+                tpl_name = tpl[1].get("name", template_id) if tpl[0] else template_id
+                _generate_poster(video_path)
+                save_video_meta(fn, title=f"{tpl_name}")
+            # 缓存结果：相同模板+参数下次秒级返回
+            set_progress(f"tpl:{cache_key}", state="SUCCESS", progress=100,
+                         message="模板缓存", video_path=video_path, log=log, code=code)
             set_progress(task_id, state="SUCCESS", progress=100,
-                         message="渲染完成", video_path=video_path, log=log)
+                         message="渲染完成", video_path=video_path, log=log, code=code)
         else:
             set_progress(task_id, state="FAILURE", progress=0,
-                         message="渲染失败", log=log)
+                         message="渲染失败", log=log, code=code)
 
         return {"success": success, "code": code, "log": log, "video_path": video_path}
     except RETRYABLE_EXCEPTIONS as e:
@@ -159,4 +208,4 @@ def render_template_task(self, template_id: str, params: dict):
         self.retry(exc=e, countdown=5)
     except Exception as e:
         set_progress(task_id, state="FAILURE", progress=0, message=str(e))
-        logger.exception("render_code_task 不可重试错误: %s", e)
+        logger.exception("celery_task 不可重试错误: %s", e)

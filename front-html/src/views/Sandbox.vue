@@ -212,8 +212,14 @@ async function startAsyncTask(apiCall: () => Promise<any>) {
 
 onMounted(() => {
   const prompt = route.query.prompt as string
-  if (prompt) requirement.value = prompt
-  restoreTaskFromSession()
+  if (prompt) {
+    // 从百科/首页跳转过来 → 清空旧任务，开始新的
+    requirement.value = prompt
+    localStorage.removeItem('cs:active-task')
+  } else {
+    // 正常导航返回 → 恢复之前的状态
+    restoreTaskFromSession()
+  }
 })
 
 onUnmounted(() => {

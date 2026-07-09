@@ -369,12 +369,14 @@ def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool,
                             progress_callback("rendering", line.strip(), percent=pct)
 
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+
+        # 编译 tqdm 进度正则（必须在 start() 之前，避免线程中的竞态条件）
+        _tqdm_pct = re.compile(r'(\d+)%')
+
         stderr_thread.start()
 
         try:
             # 逐行读取 stdout，非阻塞式获取渲染进度
-            import re as _re
-            _tqdm_pct = _re.compile(r'(\d+)%')  # 解析 tqdm 进度条: " 40%|####"
             for line in iter(process.stdout.readline, ""):
                 if not line:
                     break

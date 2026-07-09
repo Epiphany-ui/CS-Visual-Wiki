@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { templatesApi } from '@/api/templates'
 import { generationApi } from '@/api/generation'
@@ -16,38 +16,68 @@ const generating = ref(false)
 const progress = ref(0)
 const videoUrl = ref('')
 const formParams = reactive<Record<string, unknown>>({})
+let _tplProgressTimer: ReturnType<typeof setInterval> | null = null
+let _tplProgressTarget = 0
+
+function startTplProgress() {
+  stopTplProgress()
+  progress.value = 0
+  _tplProgressTarget = 5
+  _tplProgressTimer = setInterval(() => {
+    if (progress.value < _tplProgressTarget) {
+      progress.value = Math.round(progress.value + 1)
+    }
+    if (_tplProgressTarget < 92) {
+      _tplProgressTarget += 0.3
+    }
+  }, 300)
+}
+
+function stopTplProgress() {
+  if (_tplProgressTimer) { clearInterval(_tplProgressTimer); _tplProgressTimer = null }
+  _tplProgressTarget = 0
+}
 
 async function load() {
-  const res = await templatesApi.getDetail(route.params.id as string)
-  template.value = res.data.data
-  // 初始化默认值
-  if (template.value?.params) {
-    for (const p of template.value.params) {
-      formParams[p.name] = p.default
+  loading.value = true
+  try {
+    const res = await templatesApi.getDetail(route.params.id as string)
+    template.value = res.data.data
+    // 清空旧模板的残留参数
+    for (const key of Object.keys(formParams)) {
+      delete formParams[key]
     }
-  }
+    // 初始化当前模板的默认值
+    if (template.value?.params) {
+      for (const p of template.value.params) {
+        formParams[p.name] = p.default
+      }
+    }
+  } catch {
+    template.value = null
+  } finally { loading.value = false }
 }
 
 async function handleGenerate() {
   if (!template.value) return
   generating.value = true
-  progress.value = 0
+  startTplProgress()
   try {
     const res = await generationApi.asyncTemplateRender(template.value.id, formParams)
     const taskId = res.data.data?.task_id
     if (taskId) {
       connect(taskId, (data: any) => {
-        if (data.type === 'done') { generating.value = false; disconnect(); return }
-        progress.value = data.progress
+        if (data.type === 'done') { stopTplProgress(); progress.value = 100; generating.value = false; disconnect(); return }
         if (data.video_path) videoUrl.value = `http://localhost:8000${data.video_path}`
-        if (data.state === 'SUCCESS') { generating.value = false; disconnect() }
-        if (data.state === 'FAILURE') { generating.value = false; disconnect(); ElMessage.error('渲染失败') }
+        if (data.state === 'SUCCESS') { stopTplProgress(); progress.value = 100; generating.value = false; disconnect() }
+        if (data.state === 'FAILURE') { stopTplProgress(); generating.value = false; disconnect(); ElMessage.error('渲染失败') }
       })
     }
-  } catch { generating.value = false }
+  } catch { stopTplProgress(); generating.value = false }
 }
 
 onMounted(load)
+onUnmounted(() => { disconnect(); stopTplProgress() })
 </script>
 
 <template>

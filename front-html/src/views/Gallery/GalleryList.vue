@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { videosApi } from '@/api/videos'
+import { tasksApi } from '@/api/tasks'
 import type { VideoFile } from '@/types/task'
 import PageHeader from '@/components/common/PageHeader.vue'
 
@@ -65,8 +66,8 @@ async function syncPendingTasks() {
     let changed = false
     for (const tid of pending.slice(0, 10)) {
       try {
-        const res = await fetch(`http://localhost:8000/api/tasks/${tid}`)
-        const data = await res.json()
+        const res = await tasksApi.getTaskStatus(tid)
+        const data = res.data
         const vp = data?.data?.video_path || ''
         const fn = vp.replace('/videos/', '')
         if (fn && data?.data?.state === 'SUCCESS' && !works.includes(fn)) {
@@ -111,7 +112,11 @@ watch(() => route.query.tab, (t) => {
     <div class="gallery-grid" v-loading="loading">
       <div v-for="v in videos" :key="v.filename" class="g-card glass-card" @click="router.push(`/gallery/${v.filename}`)">
         <div class="g-thumb">
-          <video :src="videosApi.getPlayUrl(v.filename)" preload="none" loading="lazy" class="g-video" />
+          <img :src="`http://localhost:8000/videos/${v.filename.replace('.mp4','')}.jpg`"
+               loading="lazy"
+               class="g-thumb-img"
+               @error="($event.target as HTMLImageElement).style.display='none'"
+               :alt="getTitle(v)" />
           <div class="g-play"><el-icon :size="32"><VideoPlay /></el-icon></div>
         </div>
         <div class="g-info">
@@ -141,6 +146,7 @@ watch(() => route.query.tab, (t) => {
 .g-card { cursor: pointer; overflow: hidden; padding: 0; }
 .g-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
 .g-thumb { position: relative; aspect-ratio: 16/9; background: var(--bg-secondary); overflow: hidden; }
+.g-thumb-img { width: 100%; height: 100%; object-fit: cover; }
 .g-video { width: 100%; height: 100%; object-fit: cover; }
 .g-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); opacity: 0; transition: opacity var(--transition-fast); color: white; }
 .g-card:hover .g-play { opacity: 1; }

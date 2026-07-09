@@ -39,6 +39,7 @@ const errorInterceptor = (error: any) => {
     if (status === 401) {
       localStorage.removeItem('token')
       localStorage.removeItem('username')
+      localStorage.removeItem('userId')
       window.location.hash = '#/login'
     } else if (status === 429) {
       ElMessage.warning('请求过于频繁，请稍后重试')
