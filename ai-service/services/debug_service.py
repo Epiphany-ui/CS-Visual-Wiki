@@ -216,7 +216,7 @@ def extract_frame_at_time(filename: str, time_seconds: float) -> Tuple[bool, Dic
     frame_dir = _ensure_frame_dir(video_stem)
     output_path = frame_dir / f"time_{time_seconds:.3f}s.jpg"
 
-    if output_path.exists():
+    if output_path.exists() and output_path.stat().st_mtime >= video_path.stat().st_mtime:
         return True, {
             "frame_path": str(output_path),
             "url": f"/frames/{video_stem}/{output_path.name}",
@@ -276,7 +276,7 @@ def generate_thumbnail_sheet(
     frame_dir = _ensure_frame_dir(video_stem)
     output_path = frame_dir / f"sheet_{cols}x{rows}.jpg"
 
-    if output_path.exists():
+    if output_path.exists() and output_path.stat().st_mtime >= video_path.stat().st_mtime:
         return True, {
             "url": f"/frames/{video_stem}/{output_path.name}",
             "cols": cols, "rows": rows,

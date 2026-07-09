@@ -152,6 +152,69 @@ def delete_video(filename: str) -> bool:
     return deleted
 
 
+# ===================== 视频元数据管理 =====================
+
+VIDEO_META_PREFIX = "cs:video"  # Redis Hash: 视频元数据 {filename} → {title, created_at, username}
+
+
+def save_video_meta(filename: str, title: str = "", username: str = ""):
+    """保存视频元数据（标题、创建时间、发布者）"""
+    try:
+        r = _get_redis()
+        key = f"{VIDEO_META_PREFIX}:{filename}"
+        r.hset(key, mapping={
+            "title": title or filename,
+            "created_at": datetime.now().isoformat(),
+            "username": username or "匿名",
+        })
+        r.expire(key, 86400 * 30)  # 30 天过期
+    except Exception:
+        pass
+
+
+def get_video_meta(filename: str) -> dict:
+    """获取单个视频的元数据"""
+    try:
+        r = _get_redis()
+        key = f"{VIDEO_META_PREFIX}:{filename}"
+        return r.hgetall(key) or {}
+    except Exception:
+        return {}
+
+
+def get_all_video_metas() -> dict:
+    """批量获取所有视频元数据（{filename: {title, ...}}）"""
+    try:
+        r = _get_redis()
+        result = {}
+        cursor = 0
+        while True:
+            cursor, keys = r.scan(cursor, match=f"{VIDEO_META_PREFIX}:*", count=200)
+            for key in keys:
+                fname = key.decode("utf-8").replace(f"{VIDEO_META_PREFIX}:", "")
+                result[fname] = r.hgetall(key) or {}
+            if cursor == 0:
+                break
+        return result
+    except Exception:
+        return {}
+
+
+def update_video_title(filename: str, new_title: str) -> bool:
+    """修改视频标题"""
+    try:
+        r = _get_redis()
+        key = f"{VIDEO_META_PREFIX}:{filename}"
+        if r.exists(key):
+            r.hset(key, "title", new_title)
+            return True
+        # 如果元数据不存在，创建
+        save_video_meta(filename, title=new_title)
+        return True
+    except Exception:
+        return False
+
+
 # ===================== 画廊收藏管理 =====================
 
 GALLERY_KEY = "cs:gallery"  # Redis Set: 已收藏的视频文件名

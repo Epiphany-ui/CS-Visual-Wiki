@@ -357,10 +357,15 @@ def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool,
         stderr_lines: List[str] = []
 
         def _read_stderr():
-            """独立线程读取 stderr，防止缓冲区满导致死锁"""
+            """独立线程读取 stderr，防止缓冲区满导致死锁 + 解析 tqdm 进度"""
             for line in iter(process.stderr.readline, ""):
                 if line:
                     stderr_lines.append(line)
+                    if progress_callback:
+                        m = _tqdm_pct.search(line)
+                        if m:
+                            pct = int(m.group(1))
+                            progress_callback("rendering", line.strip(), percent=pct)
 
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
@@ -434,18 +439,24 @@ def fix_manim_code(original_code: str, error_message: str) -> Tuple[bool, str]:
     return True, fixed_code
 
 
-def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIMES) -> Dict:
+def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIMES, progress_callback=None) -> Dict:
     result = {"success": False, "code": "", "video_path": "", "try_count": 0, "log": ""}
     current_code = ""
     all_logs = []
+
+    def _report(state, msg, pct=0):
+        if progress_callback:
+            progress_callback(state, msg, percent=pct)
 
     try:
         # 优先命中缓存
         cached = get_cached_result(user_requirement)
         if cached:
             cached["log"] = "✅ 命中本地缓存，极速返回\n" + cached["log"]
+            _report("rendering", "命中缓存", 100)
             return cached
 
+        _report("rendering", "AI 正在生成 Manim 代码...", 10)
         gen_success, gen_result = generate_manim_code(user_requirement)
         result["try_count"] = 1
         if not gen_success:
@@ -455,7 +466,8 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
 
         current_code = gen_result
         result["code"] = current_code
-        render_success, render_log, video_path = render_manim_animation(current_code)
+        _report("rendering", "代码生成完成，开始渲染动画...", 20)
+        render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback)
         all_logs.append(f"第1次渲染：\n{render_log}")
 
         if render_success:
@@ -467,6 +479,7 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
             current_try = retry_index + 1
             result["try_count"] = current_try
 
+            _report("rendering", f"第{current_try}次修复中...", 30 + retry_index * 20)
             fix_success, fix_result = fix_manim_code(current_code, render_log)
             if not fix_success:
                 all_logs.append(f"第{current_try}次修复失败：{fix_result}")
@@ -478,7 +491,8 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
             current_code = fix_result
             result["code"] = current_code
 
-            render_success, render_log, video_path = render_manim_animation(current_code)
+            _report("rendering", f"第{current_try}次渲染中...", 40 + retry_index * 20)
+            render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback)
             all_logs.append(f"第{current_try}次渲染：\n{render_log}")
 
             if render_success:
