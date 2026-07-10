@@ -56,12 +56,19 @@ public class WorkServiceImpl implements WorkService {
     }
 
     @Override
-    public List<Work> listGallery(String rankType, String category, Integer page, Integer size) {
+    public List<Work> listGallery(String rankType, String sort, String category, Integer page, Integer size) {
         QueryWrapper<Work> qw = new QueryWrapper<>();
         qw.eq("is_public", 1).eq("status", 1);
         if (category != null && !category.isEmpty()) qw.like("tags", category);
-        // 排行榜排序
-        if ("daily".equals(rankType) || "weekly".equals(rankType) || "monthly".equals(rankType)) {
+        // 优先用 sort 参数（前端直接传），fallback 到 rankType
+        if (sort != null && !sort.isEmpty()) {
+            switch (sort) {
+                case "time":  qw.orderByDesc("create_time"); break;
+                case "likes": qw.orderByDesc("like_count"); break;
+                case "views": qw.orderByDesc("view_count"); break;
+                default:      qw.orderByDesc("create_time"); break;
+            }
+        } else if ("daily".equals(rankType) || "weekly".equals(rankType) || "monthly".equals(rankType)) {
             qw.orderByDesc("view_count");
         } else {
             qw.orderByDesc("like_count");
@@ -114,6 +121,7 @@ public class WorkServiceImpl implements WorkService {
                     w.getId(),
                     w.getCover(),
                     w.getTitle(),
+                    w.getDescription(),
                     author != null ? author.getNickname() : "未知用户",
                     author != null ? author.getAvatar() : null,
                     w.getLikeCount(),

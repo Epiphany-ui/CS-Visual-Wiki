@@ -358,12 +358,32 @@ def list_tasks(
     }
 
 
+def mark_task_cancelled(task_id: str):
+    """标记任务为已取消（Redis 标记，Celery worker 轮询检查）"""
+    try:
+        r = _get_redis()
+        r.setex(f"{TASK_KEY_PREFIX}:{task_id}:cancelled", 300, "1")  # 5 分钟 TTL
+    except Exception:
+        pass
+
+
+def is_task_cancelled(task_id: str) -> bool:
+    """检查任务是否已被用户取消"""
+    try:
+        r = _get_redis()
+        return bool(r.exists(f"{TASK_KEY_PREFIX}:{task_id}:cancelled"))
+    except Exception:
+        return False
+
+
 def delete_task(task_id: str) -> bool:
-    """删除任务状态记录及相关 Redis / Celery 数据"""
+    """删除任务状态记录，标记取消，并尝试终止 Celery 任务"""
     r = _get_redis()
     key = f"{TASK_KEY_PREFIX}:{task_id}"
     existed = r.exists(key)
     r.delete(key)
+    # 标记取消（Celery worker 会在关键步骤检查此标记）
+    mark_task_cancelled(task_id)
 
     try:
         from workers.celery_app import celery_app

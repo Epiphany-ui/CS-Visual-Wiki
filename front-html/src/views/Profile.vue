@@ -10,31 +10,54 @@ import AvatarIcon from '@/components/common/AvatarIcon.vue'
 const userStore = useUserStore()
 const router = useRouter()
 
+// 按用户隔离的 localStorage key（避免换账号后显示旧账号数据）
+function userKey(base: string): string {
+  const u = userStore.username || 'default'
+  return `cs:${base}:${u}`
+}
+
 const myWorksCount = ref(0)
 const myStarsCount = ref(0)
-const avatarUrl = ref(localStorage.getItem('cs:avatar') || '')
-const editingNickname = ref(false)
-const nickname = ref(localStorage.getItem('cs:nickname') || userStore.username)
+// 将旧全局 key（cs:avatar, cs:nickname）迁移到当前用户的 per-user key
+function migrateLegacyProfile() {
+  const oldAvatar = localStorage.getItem('cs:avatar')
+  const oldNick = localStorage.getItem('cs:nickname')
+  if (oldAvatar && !localStorage.getItem(userKey('avatar'))) {
+    localStorage.setItem(userKey('avatar'), oldAvatar)
+    localStorage.removeItem('cs:avatar')
+  }
+  if (oldNick && !localStorage.getItem(userKey('nickname'))) {
+    localStorage.setItem(userKey('nickname'), oldNick)
+    localStorage.removeItem('cs:nickname')
+  }
+}
+migrateLegacyProfile()
 
-async function syncProfileToBackend(fields: Record<string, string>) {
+const avatarUrl = ref(localStorage.getItem(userKey('avatar')) || '')
+const editingNickname = ref(false)
+const nickname = ref(localStorage.getItem(userKey('nickname')) || userStore.username)
+
+async function syncProfileToBackend(fields: Record<string, string>, retries = 2): Promise<boolean> {
   const token = localStorage.getItem('token')
   if (!token) return false
   const params = new URLSearchParams(fields).toString()
-  try {
-    const res = await fetch(`/api/v1/user/profile/update?${params}`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` },
-    })
-    return res.ok
-  } catch {
-    return false
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(`/api/v1/user/profile/update?${params}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+      if (res.ok) return true
+    } catch { /* retry */ }
+    if (i < retries) await new Promise(r => setTimeout(r, 500))
   }
+  return false
 }
 
 async function saveNickname() {
   const name = nickname.value.trim()
   if (!name) return
-  localStorage.setItem('cs:nickname', name)
+  localStorage.setItem(userKey('nickname'), name)
   // 同步更新 login 时的 username（AppHeader 等组件 fallback 时会用到）
   localStorage.setItem('username', name)
   editingNickname.value = false
@@ -56,7 +79,7 @@ function getMyWorksCount(): number {
 // 从服务端加载我的作品数量（跨设备同步）
 const serverWorksCount = ref(0)
 async function loadServerWorksCount() {
-  const name = localStorage.getItem('cs:nickname') || userStore.username
+  const name = userStore.username
   if (!name) return
   try {
     const res = await videosApi.getMyWorks(name)
@@ -66,7 +89,7 @@ async function loadServerWorksCount() {
 
 // 同步 localStorage 的作品到服务端
 async function syncWorksToServer() {
-  const name = localStorage.getItem('cs:nickname') || userStore.username
+  const name = userStore.username
   if (!name) return
   try {
     const works = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
@@ -75,6 +98,18 @@ async function syncWorksToServer() {
       await loadServerWorksCount()
     }
   } catch { /* ignore */ }
+}
+
+// 自动将 localStorage 中已有的头像和昵称同步到 Java 后端
+async function syncExistingProfileToBackend() {
+  const fields: Record<string, string> = {}
+  const avatar = localStorage.getItem(userKey('avatar'))
+  const nickname = localStorage.getItem(userKey('nickname'))
+  if (avatar) fields.avatar = avatar
+  if (nickname) fields.nickname = nickname
+  if (Object.keys(fields).length > 0) {
+    await syncProfileToBackend(fields)
+  }
 }
 
 async function loadStarsCount() {
@@ -96,7 +131,7 @@ async function handleAvatarUpload(e: Event) {
     if (data.code === 0 && data.data?.url) {
       const fullUrl = `http://localhost:8000${data.data.url}`
       avatarUrl.value = fullUrl
-      localStorage.setItem('cs:avatar', fullUrl)
+      localStorage.setItem(userKey('avatar'), fullUrl)
       ElMessage.success('头像已更新')
       // 同步头像 URL 到 Java 后端数据库
       const ok = await syncProfileToBackend({ avatar: fullUrl })
@@ -115,10 +150,33 @@ function handleLogout() {
   router.push('/')
 }
 
+// 从 Java 后端拉取最新头像/昵称，更新 localStorage（跨设备同步）
+async function pullProfileFromBackend() {
+  const token = localStorage.getItem('token')
+  if (!token) return
+  try {
+    const res = await fetch('/api/v1/user/info', { headers: { 'Authorization': `Bearer ${token}` } })
+    if (!res.ok) return
+    const data = (await res.json()).data
+    if (data) {
+      if (data.nickname) {
+        localStorage.setItem(userKey('nickname'), data.nickname)
+        nickname.value = data.nickname
+      }
+      if (data.avatar) {
+        localStorage.setItem(userKey('avatar'), data.avatar)
+        avatarUrl.value = data.avatar
+      }
+    }
+  } catch { /* ignore */ }
+}
+
 onMounted(() => {
   myWorksCount.value = getMyWorksCount()
   loadStarsCount()
   loadServerWorksCount().then(() => syncWorksToServer())
+  // 从 Java 后端拉取最新数据（覆盖本地），然后同步本地未同步的数据
+  pullProfileFromBackend().then(() => syncExistingProfileToBackend())
 })
 </script>
 
@@ -134,7 +192,7 @@ onMounted(() => {
         <div v-if="editingNickname" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:8px">
           <el-input v-model="nickname" size="small" style="width:180px" @keyup.enter="saveNickname" />
           <el-button size="small" type="primary" @click="saveNickname">确认</el-button>
-          <el-button size="small" @click="editingNickname = false; nickname = localStorage.getItem('cs:nickname') || userStore.username">取消</el-button>
+          <el-button size="small" @click="editingNickname = false; nickname = localStorage.getItem(userKey('nickname')) || userStore.username">取消</el-button>
         </div>
         <h2 v-else style="cursor:pointer" @click="editingNickname = true">
           {{ nickname }} <el-icon :size="14"><EditPen /></el-icon>

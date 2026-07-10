@@ -31,11 +31,12 @@ public class GalleryController {
     @GetMapping("/list")
     public Result<Map<String, Object>> getGalleryList(
             @RequestParam(value = "rankType", defaultValue = "weekly") String rankType,
+            @RequestParam(value = "sort", required = false) String sort,
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "page", defaultValue = "1") Integer page,
             @RequestParam(value = "size", defaultValue = "10") Integer size) {
 
-        List<Work> works = workService.listGallery(rankType, category, page, size);
+        List<Work> works = workService.listGallery(rankType, sort, category, page, size);
         List<WorkListDTO> list = works.stream().map(w -> {
             User author = userService.getById(w.getUserId());
             String authorName = author != null ?
@@ -43,8 +44,9 @@ public class GalleryController {
                 "匿名用户";
             String authorAvatar = author != null ? author.getAvatar() : null;
             String createTime = w.getCreateTime() != null ? w.getCreateTime().toString() : null;
-            return new WorkListDTO(w.getId(), w.getCover(), w.getTitle(), authorName,
-                    authorAvatar, w.getLikeCount(), w.getViewCount(),
+            return new WorkListDTO(w.getId(), w.getCover(), w.getTitle(),
+                    w.getDescription(), authorName, authorAvatar,
+                    w.getLikeCount(), w.getViewCount(),
                     w.getVideoPath(), createTime);
         }).collect(Collectors.toList());
 

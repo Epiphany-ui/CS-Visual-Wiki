@@ -18,14 +18,51 @@ const displayName = ref(userStore.username)
 
 function refreshProfile() {
   try {
-    avatarUrl.value = localStorage.getItem('cs:avatar') || ''
-    displayName.value = localStorage.getItem('cs:nickname') || userStore.username
+    const u = userStore.username || 'default'
+    // 迁移旧全局 key → per-user key
+    if (!localStorage.getItem(`cs:avatar:${u}`)) {
+      const old = localStorage.getItem('cs:avatar')
+      if (old) { localStorage.setItem(`cs:avatar:${u}`, old); localStorage.removeItem('cs:avatar') }
+    }
+    if (!localStorage.getItem(`cs:nickname:${u}`)) {
+      const old = localStorage.getItem('cs:nickname')
+      if (old) { localStorage.setItem(`cs:nickname:${u}`, old); localStorage.removeItem('cs:nickname') }
+    }
+    avatarUrl.value = localStorage.getItem(`cs:avatar:${u}`) || ''
+    displayName.value = localStorage.getItem(`cs:nickname:${u}`) || userStore.username
   } catch { /* ignore */ }
 }
 refreshProfile()
 
+// 从 Java 后端拉取最新头像/昵称（跨设备同步）
+async function pullProfileFromBackend() {
+  const token = localStorage.getItem('token')
+  if (!token) return
+  try {
+    const res = await fetch('/api/v1/user/info', { headers: { 'Authorization': `Bearer ${token}` } })
+    if (!res.ok) return
+    const data = (await res.json()).data
+    const u = userStore.username || 'default'
+    if (data?.nickname) {
+      localStorage.setItem(`cs:nickname:${u}`, data.nickname)
+      displayName.value = data.nickname
+    }
+    if (data?.avatar) {
+      localStorage.setItem(`cs:avatar:${u}`, data.avatar)
+      avatarUrl.value = data.avatar
+    }
+  } catch { /* ignore */ }
+}
+// 登录后自动从 Java 后端同步最新资料
+if (userStore.isLoggedIn) pullProfileFromBackend()
+
 // 从 Profile 页返回时自动刷新头像和昵称
 watch(() => route.fullPath, () => refreshProfile())
+// 登录/登出时自动同步
+watch(() => userStore.isLoggedIn, (loggedIn) => {
+  if (loggedIn) { refreshProfile(); pullProfileFromBackend() }
+  else { avatarUrl.value = ''; displayName.value = '' }
+})
 
 function handleSearch() {
   if (searchKeyword.value.trim()) {

@@ -17,7 +17,7 @@ public interface WorkService {
 
     List<Work> listByUser(Integer userId, Integer status, Integer page, Integer size);
 
-    List<Work> listGallery(String rankType, String category, Integer page, Integer size);
+    List<Work> listGallery(String rankType, String sort, String category, Integer page, Integer size);
 
     List<Work> listHomeWorks(String type, Integer page, Integer size);
 

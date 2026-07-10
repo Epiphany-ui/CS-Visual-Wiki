@@ -24,11 +24,12 @@ export const generationApi = {
     })
   },
 
-  /** AI 修复代码 */
-  fixCode(code: string, errorMessage: string) {
+  /** AI 修复代码（可选传入原始需求帮助 AI 理解意图） */
+  fixCode(code: string, errorMessage: string, context?: string) {
     return pythonClient.post<ApiResponse<{ code: string }>>('/api/ai/fix-code', {
       code,
       error_message: errorMessage,
+      context,
     })
   },
 

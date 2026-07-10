@@ -45,7 +45,7 @@ from services.progress_service import (
     list_videos, delete_video, list_tasks, delete_task, get_task_count,
     save_to_gallery, is_in_gallery, get_gallery_filenames,
     save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
-    add_to_user_works, get_user_works,
+    add_to_user_works, get_user_works, mark_task_cancelled,
 )
 from services.config import settings
 from services.exceptions import (
@@ -157,6 +157,7 @@ class FixCodeRequest(BaseModel):
     """AI 修复代码"""
     code: str
     error_message: str
+    context: Optional[str] = None  # 原始需求描述，帮助 AI 理解用户意图
 
 class RetrieveRequest(BaseModel):
     """RAG 检索参考资料"""
@@ -337,9 +338,9 @@ async def api_render_code(req: RenderRequest):
 # ===================== 拆分接口：AI 修复代码 =====================
 @app.post("/api/ai/fix-code")
 async def api_fix_code(req: FixCodeRequest):
-    """根据报错信息，AI 自动修复代码"""
+    """根据报错信息和原始需求，AI 自动修复代码"""
     try:
-        success, result = fix_manim_code(req.code, req.error_message)
+        success, result = fix_manim_code(req.code, req.error_message, req.context)
         if not success:
             return error_response(result)
         return success_response({"code": result}, "代码修复完成")

@@ -9,6 +9,12 @@ export const useUserStore = defineStore('user', () => {
 
   const isLoggedIn = computed(() => !!token.value && !!username.value)
 
+  // 登录/注册时将服务端返回的头像和昵称写入 per-user localStorage
+  function _saveProfileToLocal(u: string, nickname?: string, avatar?: string) {
+    if (nickname) localStorage.setItem(`cs:nickname:${u}`, nickname)
+    if (avatar) localStorage.setItem(`cs:avatar:${u}`, avatar)
+  }
+
   async function login(name: string, pwd: string) {
     const res = await authApi.login(name, pwd)
     const data = res.data.data
@@ -19,6 +25,7 @@ export const useUserStore = defineStore('user', () => {
       localStorage.setItem('token', data.token)
       localStorage.setItem('username', data.username)
       localStorage.setItem('userId', String(data.userId))
+      _saveProfileToLocal(data.username, data.nickname, data.avatar)
     }
     return res.data
   }
@@ -33,6 +40,7 @@ export const useUserStore = defineStore('user', () => {
       localStorage.setItem('token', data.token)
       localStorage.setItem('username', data.username)
       localStorage.setItem('userId', String(data.userId))
+      _saveProfileToLocal(data.username, data.nickname, data.avatar)
     }
     return res.data
   }
@@ -44,6 +52,7 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('token')
     localStorage.removeItem('username')
     localStorage.removeItem('userId')
+    // 不清除 per-user 头像/昵称 — 下次同账号登录时自动恢复
   }
 
   return { token, username, userId, isLoggedIn, login, register, logout }

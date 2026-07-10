@@ -58,7 +58,7 @@ async function loadStars() {
 // 从服务端加载"我的作品"列表（跨设备同步，不依赖 localStorage）
 const serverMyWorks = ref<VideoFile[]>([])
 async function loadMyWorksFromServer() {
-  const name = localStorage.getItem('cs:nickname') || localStorage.getItem('username') || ''
+  const name = localStorage.getItem('username') || ''
   if (!name) return
   try {
     const res = await videosApi.getMyWorks(name)

@@ -18,6 +18,9 @@ public class WorkListDTO {
     @Schema(description = "作品标题")
     private String title;
 
+    @Schema(description = "作品描述")
+    private String description;
+
     @Schema(description = "作者昵称")
     private String authorName;
 
@@ -38,12 +41,13 @@ public class WorkListDTO {
 
     public WorkListDTO() {}
 
-    public WorkListDTO(Integer workId, String cover, String title, String authorName,
-                       String authorAvatar, Integer likeCount, Integer viewCount,
-                       String videoPath, String createTime) {
+    public WorkListDTO(Integer workId, String cover, String title, String description,
+                       String authorName, String authorAvatar, Integer likeCount,
+                       Integer viewCount, String videoPath, String createTime) {
         this.workId = workId;
         this.cover = cover;
         this.title = title;
+        this.description = description;
         this.authorName = authorName;
         this.authorAvatar = authorAvatar;
         this.likeCount = likeCount;
@@ -60,6 +64,9 @@ public class WorkListDTO {
 
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
     public String getAuthorName() { return authorName; }
     public void setAuthorName(String authorName) { this.authorName = authorName; }

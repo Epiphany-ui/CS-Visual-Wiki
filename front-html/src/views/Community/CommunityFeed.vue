@@ -3,12 +3,23 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/common/PageHeader.vue'
 import AvatarIcon from '@/components/common/AvatarIcon.vue'
+import { videosApi } from '@/api/videos'
 
 const router = useRouter()
 const posts = ref<any[]>([])
 const loading = ref(true)
 const sortBy = ref<'time' | 'likes' | 'views'>('time')
 const showVideo = ref<number | null>(null)
+
+function getThumbnailUrl(post: any): string {
+  // 优先用 Java 后端返回的 cover
+  if (post.cover) return post.cover
+  // 从 videoPath 提取文件名，走 Python 缩略图 API
+  const vp = post.videoPath || ''
+  const fn = vp.split('/').pop()
+  if (fn) return videosApi.getThumbnailUrl(fn)
+  return ''
+}
 
 async function loadPosts() {
   loading.value = true
@@ -17,9 +28,11 @@ async function loadPosts() {
     const data = await res.json()
     posts.value = (data.data?.list || []).map((w: any) => ({
       ...w,
+      id: w.workId,                          // Java 后端返回 workId，前端统一用 id
       authorName: w.authorName || '匿名用户',
       text: w.description || '',
       time: w.createTime || '',
+      thumbnailUrl: getThumbnailUrl(w),
     }))
   } catch { /* Java backend may not be running */ }
   finally { loading.value = false }
@@ -57,9 +70,11 @@ onMounted(loadPosts)
       <div v-for="post in posts" :key="post.id" class="post-card glass-card">
         <!-- 作者信息 -->
         <div class="post-header">
-          <AvatarIcon :name="post.authorName" :size="40" :avatar-url="post.authorAvatar || ''" />
+          <div class="post-avatar-clickable" @click="router.push(`/user/${encodeURIComponent(post.authorName || '匿名用户')}`)">
+            <AvatarIcon :name="post.authorName" :size="40" :avatar-url="post.authorAvatar || ''" />
+          </div>
           <div class="post-author-info">
-            <span class="post-author-name">{{ post.authorName }}</span>
+            <span class="post-author-name" @click="router.push(`/user/${encodeURIComponent(post.authorName || '匿名用户')}`)">{{ post.authorName }}</span>
             <span class="post-time">{{ formatTime(post.time) }}</span>
           </div>
         </div>
@@ -76,8 +91,8 @@ onMounted(loadPosts)
             <video :src="`/videos/${post.videoPath.split('/').pop()}`" controls autoplay class="post-video-el" />
           </div>
           <div v-else class="post-video-thumb">
-            <img v-if="post.cover" :src="post.cover" class="post-thumb-img" />
-            <div v-else class="post-thumb-placeholder">
+            <img v-if="post.thumbnailUrl" :src="post.thumbnailUrl" class="post-thumb-img" @error="($event.target as HTMLImageElement).style.display='none'" />
+            <div v-if="!post.thumbnailUrl" class="post-thumb-placeholder">
               <el-icon :size="40"><VideoPlay /></el-icon>
             </div>
             <div class="post-play-overlay"><el-icon :size="28"><VideoPlay /></el-icon></div>
@@ -108,8 +123,11 @@ onMounted(loadPosts)
 
 .post-card { padding: var(--space-lg); }
 .post-header { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.post-avatar-clickable { cursor: pointer; transition: transform var(--transition-fast); }
+.post-avatar-clickable:hover { transform: scale(1.1); }
 .post-author-info { display: flex; flex-direction: column; }
-.post-author-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+.post-author-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); cursor: pointer; }
+.post-author-name:hover { color: var(--accent-purple-light); text-decoration: underline; }
 .post-time { font-size: 0.75rem; color: var(--text-tertiary); }
 
 .post-body { margin-bottom: var(--space-md); }

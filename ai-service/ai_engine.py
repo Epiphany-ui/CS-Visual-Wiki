@@ -450,13 +450,19 @@ def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool,
         return False, f"❌ 渲染执行异常：{str(e)}", ""
 
 
-def fix_manim_code(original_code: str, error_message: str) -> Tuple[bool, str]:
+def fix_manim_code(original_code: str, error_message: str, context: str = None) -> Tuple[bool, str]:
+    """AI 修复代码
+    :param original_code: 原始有错误的代码
+    :param error_message: 报错信息（Manim 渲染 stderr）
+    :param context: 用户原始需求描述（可选，帮助 AI 理解意图后做针对性修复）
+    """
     # 从外部 Prompt 模板文件加载 System Prompt（支持热重载，修改即生效）
     system_prompt = _get_prompt_service().render(
         "code_fix",
         error_message=error_message,
     )
-    user_prompt = f"请修复以下Manim代码：\n```python\n{original_code}\n```"
+    context_part = f"\n\n用户原始需求：{context}\n请根据需求理解用户意图，除了修复语法错误，如果需要调整动画参数、逻辑或展示方式才能满足需求，也请一并修改。" if context else ""
+    user_prompt = f"请修复以下Manim代码：\n```python\n{original_code}\n```{context_part}"
 
     messages = [
         {"role": "system", "content": system_prompt},

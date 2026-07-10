@@ -6,7 +6,7 @@ import { videosApi } from '@/api/videos'
 import { useSSE } from '@/composables/useSSE'
 import { useTaskStore } from '@/stores/task'
 import type { SSETaskEvent, SSEDoneEvent } from '@/types/api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import CodeEditor from '@/components/common/CodeEditor.vue'
 
 const route = useRoute()
@@ -30,6 +30,42 @@ let _activeTaskId = ''
 let _progressTimer: ReturnType<typeof setInterval> | null = null
 let _progressTarget = 0
 let _taskCompleted = false // 防止 onerror 覆盖已完成的结果
+
+// ========== 状态持久化：离开再回来界面不变 ==========
+const STATE_KEY = 'cs:sandbox-state'
+
+function saveState() {
+  try {
+    const state = {
+      requirement: requirement.value,
+      code: code.value,
+      videoPath: videoPath.value,
+      videoUrl: videoUrl.value,
+      currentFilename: currentFilename.value,
+      savedToGallery: savedToGallery.value,
+      logOutput: logOutput.value,
+      progress: progress.value,
+      progressMsg: progressMsg.value,
+      activeTaskId: _activeTaskId,
+    }
+    sessionStorage.setItem(STATE_KEY, JSON.stringify(state))
+  } catch { /* ignore */ }
+}
+
+function restoreState() {
+  try {
+    const raw = sessionStorage.getItem(STATE_KEY)
+    if (!raw) return
+    const state = JSON.parse(raw)
+    requirement.value = state.requirement || ''
+    code.value = state.code || ''
+    videoPath.value = state.videoPath || ''
+    videoUrl.value = state.videoUrl || ''
+    currentFilename.value = state.currentFilename || ''
+    savedToGallery.value = state.savedToGallery || false
+    logOutput.value = state.logOutput || ''
+  } catch { /* ignore */ }
+}
 
 function startSmoothProgress(fromPct = 0) {
   stopSmoothProgress()
@@ -75,7 +111,7 @@ function onSSEEvent(evt: SSETaskEvent) {
         localStorage.setItem('cs:my-works', JSON.stringify(works.slice(0, 50)))
       }
       // 同步到服务端（跨设备持久化）
-      const name = localStorage.getItem('cs:nickname') || localStorage.getItem('username') || ''
+      const name = localStorage.getItem('username') || ''
       if (name) {
         videosApi.syncMyWorks(name, [currentFilename.value]).catch(() => {})
       }
@@ -102,6 +138,17 @@ function restoreTaskFromSession() {
   if (!tid) return
 
   const cached = taskStore.activeTask
+  // 从 sessionStorage 恢复进度（比 Pinia store 更准确）
+  let savedProgress = 0
+  try {
+    const raw = sessionStorage.getItem(STATE_KEY)
+    if (raw) {
+      const state = JSON.parse(raw)
+      savedProgress = state.progress || 0
+      if (state.progressMsg) progressMsg.value = state.progressMsg
+    }
+  } catch { /* ignore */ }
+
   if (cached?.state === 'SUCCESS') {
     progress.value = 100
     generating.value = false
@@ -118,11 +165,20 @@ function restoreTaskFromSession() {
     progressMsg.value = cached.message || '任务失败'
     return
   }
-  // 任务可能仍在运行
+  // 任务可能仍在运行 → 用上次保存的进度或店里的进度，取较大值避免"倒退"
   if (cached?.state === 'PENDING' || cached?.state === 'STARTED' || cached?.state === 'RENDERING') {
     _activeTaskId = tid
     generating.value = true
-    startSmoothProgress(cached.progress || 0)
+    const bestProgress = Math.max(savedProgress, cached?.progress || 0)
+    // 估算离开期间的进度增量
+    if (cached?.startTime) {
+      const elapsed = (Date.now() - cached.startTime) / 1000
+      // 假设 120 秒完成，线性估计额外进度
+      const estimated = Math.min(92, Math.round(elapsed / 120 * 100))
+      startSmoothProgress(Math.max(bestProgress, estimated))
+    } else {
+      startSmoothProgress(bestProgress)
+    }
     progressMsg.value = cached.message || '恢复中...'
     code.value = (cached as any)?.code || ''
     connect(tid, (data) => {
@@ -153,16 +209,37 @@ function handleRender() {
   startAsyncTask(() => generationApi.asyncRender(code.value))
 }
 
+async function handleCancelTask() {
+  if (!_activeTaskId) return
+  try {
+    await ElMessageBox.confirm('确定要停止当前任务吗？', '取消生成', { confirmButtonText: '停止', cancelButtonText: '继续等待', type: 'warning' })
+  } catch { return } // 用户取消
+  try {
+    disconnect()
+    stopSmoothProgress()
+    generating.value = false
+    progressMsg.value = '任务已取消'
+    // 尝试通知后端取消 Celery 任务
+    await fetch(`http://localhost:8000/api/tasks/${_activeTaskId}`, { method: 'DELETE' }).catch(() => {})
+    localStorage.removeItem('cs:active-task')
+  } catch { /* ignore */ }
+}
+
 async function handleFixCode() {
   if (!code.value.trim()) return
   const err = getLastError()
-  if (!err.trim()) { ElMessage.warning('请先渲染代码获取错误信息'); return }
+  if (!err.trim()) { ElMessage.warning('请先渲染代码获取错误信息，或先点「渲染」试试'); return }
   fixing.value = true
   try {
-    const res = await generationApi.fixCode(code.value, err)
+    // 把原始需求也传给 AI，帮助 AI 理解用户意图后修复
+    const res = await generationApi.fixCode(code.value, err, requirement.value || undefined)
     const fixed = res.data.data?.code
-    if (fixed && fixed !== code.value) { code.value = fixed; ElMessage.success('代码已修复') }
-    else { ElMessage.info('AI 未找到可修复的问题') }
+    if (fixed && fixed !== code.value) {
+      code.value = fixed
+      ElMessage.success('AI 已根据错误信息和原始需求修复代码，请重新渲染验证')
+    } else {
+      ElMessage.info('AI 未找到需要修改的地方，代码可能已正确')
+    }
   } catch { ElMessage.error('修复失败，请重试') }
   finally { fixing.value = false }
 }
@@ -173,7 +250,9 @@ function openPublishDialog() {
 }
 
 async function handlePublish() {
-  const title = code.value.slice(0, 50).match(/class\s+(\w+)/)?.[1] || requirement.value.slice(0, 30) || '未命名作品'
+  // 从完整代码中提取场景类名作为智能标题（不截断，避免类名被切碎）
+  const classMatch = code.value.match(/class\s+(\w+)\s*\(/)
+  const title = classMatch?.[1] || requirement.value.slice(0, 40) || '未命名作品'
   const token = localStorage.getItem('token')
   if (!token) { ElMessage.warning('请先登录再发布'); return }
   try {
@@ -254,11 +333,13 @@ async function startAsyncTask(apiCall: () => Promise<any>) {
 onMounted(() => {
   const prompt = route.query.prompt as string
   if (prompt) {
-    // 从百科/首页跳转过来 → 清空旧任务，开始新的
+    // 从百科/首页跳转过来 → 用新的 prompt，但保留代码
     requirement.value = prompt
+    restoreState() // 恢复代码、视频等
     localStorage.removeItem('cs:active-task')
   } else {
     // 正常导航返回 → 恢复之前的状态
+    restoreState()
     restoreTaskFromSession()
   }
 })
@@ -266,6 +347,7 @@ onMounted(() => {
 onUnmounted(() => {
   disconnect()
   stopSmoothProgress()
+  saveState()
 })
 </script>
 
@@ -285,7 +367,10 @@ onUnmounted(() => {
 
     <div v-if="generating" class="progress-bar-wrap">
       <el-progress :percentage="progress" :color="'#7c3aed'" :stroke-width="6" />
-      <span class="progress-msg">{{ progressMsg }}</span>
+      <span class="progress-msg">{{ progressMsg || '生成中...' }}</span>
+      <el-button size="small" type="danger" plain round @click="handleCancelTask" style="flex-shrink:0">
+        <el-icon><Close /></el-icon> 取消
+      </el-button>
     </div>
 
     <div class="sb-panels">
