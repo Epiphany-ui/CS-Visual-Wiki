@@ -41,9 +41,11 @@ public class GalleryController {
             String authorName = author != null ?
                 (author.getNickname() != null ? author.getNickname() : author.getUsername()) :
                 "匿名用户";
+            String authorAvatar = author != null ? author.getAvatar() : null;
             String createTime = w.getCreateTime() != null ? w.getCreateTime().toString() : null;
             return new WorkListDTO(w.getId(), w.getCover(), w.getTitle(), authorName,
-                    w.getLikeCount(), w.getViewCount(), w.getVideoPath(), createTime);
+                    authorAvatar, w.getLikeCount(), w.getViewCount(),
+                    w.getVideoPath(), createTime);
         }).collect(Collectors.toList());
 
         Map<String, Object> data = new HashMap<>();

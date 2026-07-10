@@ -115,6 +115,7 @@ public class WorkServiceImpl implements WorkService {
                     w.getCover(),
                     w.getTitle(),
                     author != null ? author.getNickname() : "未知用户",
+                    author != null ? author.getAvatar() : null,
                     w.getLikeCount(),
                     w.getViewCount(),
                     w.getVideoPath(),

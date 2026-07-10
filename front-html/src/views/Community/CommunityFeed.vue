@@ -57,7 +57,7 @@ onMounted(loadPosts)
       <div v-for="post in posts" :key="post.id" class="post-card glass-card">
         <!-- 作者信息 -->
         <div class="post-header">
-          <AvatarIcon :name="post.authorName" :size="40" />
+          <AvatarIcon :name="post.authorName" :size="40" :avatar-url="post.authorAvatar || ''" />
           <div class="post-author-info">
             <span class="post-author-name">{{ post.authorName }}</span>
             <span class="post-time">{{ formatTime(post.time) }}</span>

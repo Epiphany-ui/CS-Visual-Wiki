@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { wikiApi } from '@/api/wiki'
 import type { WikiMeta } from '@/types/wiki'
@@ -42,13 +42,32 @@ async function loadList() {
 function selectCategory(cat: string) {
   activeCategory.value = cat
   searchKw.value = ''
+  router.replace({ query: cat ? { category: cat } : {} })
   loadList()
 }
 
 function handleSearch() {
   activeCategory.value = ''
+  router.replace({ query: searchKw.value ? { q: searchKw.value } : {} })
   loadList()
 }
+
+// 响应从 AppHeader 搜索跳转过来的路由变化（组件不重载时也能更新）
+watch(() => route.query.q, (newQ) => {
+  searchKw.value = (newQ as string) || ''
+  if (searchKw.value) {
+    activeCategory.value = ''
+  }
+  loadList()
+})
+
+watch(() => route.query.category, (newCat) => {
+  activeCategory.value = (newCat as string) || ''
+  if (activeCategory.value) {
+    searchKw.value = ''
+  }
+  loadList()
+})
 
 onMounted(() => { loadCategories(); loadList() })
 </script>

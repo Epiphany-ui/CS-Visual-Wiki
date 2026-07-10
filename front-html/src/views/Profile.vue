@@ -16,23 +16,34 @@ const avatarUrl = ref(localStorage.getItem('cs:avatar') || '')
 const editingNickname = ref(false)
 const nickname = ref(localStorage.getItem('cs:nickname') || userStore.username)
 
+async function syncProfileToBackend(fields: Record<string, string>) {
+  const token = localStorage.getItem('token')
+  if (!token) return false
+  const params = new URLSearchParams(fields).toString()
+  try {
+    const res = await fetch(`/api/v1/user/profile/update?${params}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 async function saveNickname() {
   const name = nickname.value.trim()
   if (!name) return
-  // 始终存本地
   localStorage.setItem('cs:nickname', name)
+  // 同步更新 login 时的 username（AppHeader 等组件 fallback 时会用到）
+  localStorage.setItem('username', name)
   editingNickname.value = false
   ElMessage.success('昵称已更新')
-  // 异步同步到 Java 后端（静默失败）
-  try {
-    const token = localStorage.getItem('token')
-    if (token) {
-      await fetch(`/api/v1/user/profile/update?nickname=${encodeURIComponent(name)}`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` },
-      })
-    }
-  } catch { /* 静默失败，本地已保存 */ }
+  // 异步同步到 Java 后端
+  const ok = await syncProfileToBackend({ nickname: name })
+  if (!ok) {
+    ElMessage.warning('昵称已本地保存，但同步到服务器失败，重启后社区可能显示旧名字')
+  }
 }
 
 function getMyWorksCount(): number {
@@ -40,6 +51,30 @@ function getMyWorksCount(): number {
     const works = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
     return works.length
   } catch { return 0 }
+}
+
+// 从服务端加载我的作品数量（跨设备同步）
+const serverWorksCount = ref(0)
+async function loadServerWorksCount() {
+  const name = localStorage.getItem('cs:nickname') || userStore.username
+  if (!name) return
+  try {
+    const res = await videosApi.getMyWorks(name)
+    serverWorksCount.value = res.data.data?.total || 0
+  } catch { /* ignore */ }
+}
+
+// 同步 localStorage 的作品到服务端
+async function syncWorksToServer() {
+  const name = localStorage.getItem('cs:nickname') || userStore.username
+  if (!name) return
+  try {
+    const works = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
+    if (works.length > 0) {
+      await videosApi.syncMyWorks(name, works)
+      await loadServerWorksCount()
+    }
+  } catch { /* ignore */ }
 }
 
 async function loadStarsCount() {
@@ -63,6 +98,11 @@ async function handleAvatarUpload(e: Event) {
       avatarUrl.value = fullUrl
       localStorage.setItem('cs:avatar', fullUrl)
       ElMessage.success('头像已更新')
+      // 同步头像 URL 到 Java 后端数据库
+      const ok = await syncProfileToBackend({ avatar: fullUrl })
+      if (!ok) {
+        ElMessage.warning('头像已本地保存，但同步到服务器失败，其他用户可能看不到新头像')
+      }
     } else {
       ElMessage.error(data.message || '上传失败')
     }
@@ -78,6 +118,7 @@ function handleLogout() {
 onMounted(() => {
   myWorksCount.value = getMyWorksCount()
   loadStarsCount()
+  loadServerWorksCount().then(() => syncWorksToServer())
 })
 </script>
 
@@ -105,7 +146,7 @@ onMounted(() => {
 
     <div class="profile-grid">
       <RevealOnScroll v-for="(card, i) in [
-        { icon: 'PictureFilled', color: 'var(--accent-purple)', label: '我的作品', count: myWorksCount, click: () => router.push('/gallery?tab=my-works') },
+        { icon: 'PictureFilled', color: 'var(--accent-purple)', label: '我的作品', count: serverWorksCount.value || myWorksCount, click: () => router.push('/gallery?tab=my-works') },
         { icon: 'Star', color: 'var(--accent-orange)', label: '我的收藏', count: myStarsCount, click: () => router.push('/gallery?tab=stars') },
         { icon: 'Collection', color: 'var(--accent-cyan)', label: '词条贡献', count: 0, click: () => router.push('/wiki') },
         { icon: 'Clock', color: 'var(--accent-green)', label: '模板贡献', count: 0, click: () => router.push('/templates') },

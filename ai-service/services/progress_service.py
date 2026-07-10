@@ -123,6 +123,8 @@ def list_videos() -> list:
     videos = []
     for f in sorted(video_dir.glob("*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True):
         stat = f.stat()
+        poster_name = f"{f.stem}.jpg"
+        poster_path = video_dir / poster_name
         videos.append({
             "filename": f.name,
             "task_id": f.stem,
@@ -130,6 +132,7 @@ def list_videos() -> list:
             "size_mb": round(stat.st_size / (1024 * 1024), 2),
             "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
             "url": f"/videos/{f.name}",
+            "poster": f"/videos/{poster_name}" if poster_path.exists() else "",
         })
     return videos
 
@@ -166,9 +169,34 @@ def save_video_meta(filename: str, title: str = "", username: str = ""):
         r.hset(key, "created_at", datetime.now().isoformat())
         r.hset(key, "username", username or "匿名")
         r.expire(key, 86400 * 30)  # 30 天过期
+        # 同步加入用户作品列表（服务端持久化）
+        if username and username != "匿名":
+            r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
+            r.expire(f"{VIDEO_META_PREFIX}:user-works:{username}", 86400 * 90)
         _maybe_bgsave()
     except Exception:
         pass
+
+
+def add_to_user_works(username: str, filename: str) -> bool:
+    """将视频加入用户的作品列表（服务端持久化，跨浏览器/设备同步）"""
+    try:
+        r = _get_redis()
+        r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
+        r.expire(f"{VIDEO_META_PREFIX}:user-works:{username}", 86400 * 90)
+        _maybe_bgsave()
+        return True
+    except Exception:
+        return False
+
+
+def get_user_works(username: str) -> set:
+    """获取用户的作品文件名列表"""
+    try:
+        r = _get_redis()
+        return r.smembers(f"{VIDEO_META_PREFIX}:user-works:{username}") or set()
+    except Exception:
+        return set()
 
 
 def get_video_meta(filename: str) -> dict:
@@ -190,10 +218,15 @@ def get_all_video_metas() -> dict:
         while True:
             cursor, keys = r.scan(cursor, match=f"{VIDEO_META_PREFIX}:*", count=200)
             for key in keys:
-                # decode_responses=True 时 key 已是 str，兼容 bytes
                 ks = key.decode("utf-8") if isinstance(key, bytes) else key
+                # 跳过 user-works Set 键（它们不是 Hash，hgetall 会抛 WRONGTYPE）
+                if ":user-works:" in ks:
+                    continue
                 fname = ks.replace(f"{VIDEO_META_PREFIX}:", "")
-                result[fname] = r.hgetall(key) or {}
+                try:
+                    result[fname] = r.hgetall(key) or {}
+                except Exception:
+                    continue  # 跳过类型不匹配的键
             if cursor == 0:
                 break
         return result
@@ -208,9 +241,9 @@ def update_video_title(filename: str, new_title: str) -> bool:
         key = f"{VIDEO_META_PREFIX}:{filename}"
         if r.exists(key):
             r.hset(key, "title", new_title)
-            return True
-        # 如果元数据不存在，创建
-        save_video_meta(filename, title=new_title)
+        else:
+            # 如果元数据不存在，创建
+            save_video_meta(filename, title=new_title)
         _maybe_bgsave()
         return True
     except Exception:
@@ -223,10 +256,13 @@ GALLERY_KEY = "cs:gallery"  # Redis Set: 已收藏的视频文件名
 
 
 def _maybe_bgsave():
-    """在关键写入后手动触发 BGSAVE（Windows 上禁用自动 save 以避免断连 Celery）"""
+    """在关键写入后手动触发持久化。
+    使用 SAVE（同步）而非 BGSAVE，因为 BGSAVE 依赖 fork()，
+    在 Windows 上不可用，会导致数据静默丢失。
+    """
     try:
         r = _get_redis()
-        r.bgsave()
+        r.save()
     except Exception:
         pass
 
@@ -240,6 +276,7 @@ def save_to_gallery(filename: str) -> bool:
         r = _get_redis()
         if r.sismember(GALLERY_KEY, filename):
             r.srem(GALLERY_KEY, filename)
+            _maybe_bgsave()
             return False
         else:
             r.sadd(GALLERY_KEY, filename)

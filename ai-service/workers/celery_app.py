@@ -18,33 +18,11 @@ if str(_AI_SERVICE_DIR) not in sys.path:
     sys.path.insert(0, str(_AI_SERVICE_DIR))
 
 from celery import Celery
-from ai_engine import render_manim_animation, run_full_pipeline, extract_scene_class_name
+from ai_engine import render_manim_animation, run_full_pipeline, extract_scene_class_name, generate_video_poster
 from services.config import settings
 from services.template_service import template_service
 from services.progress_service import set_progress, get_progress, save_video_meta
 from services.logging_config import get_logger
-
-_VIDEO_DIR = Path(__file__).resolve().parent.parent / "outputs" / "videos"
-
-
-def _generate_poster(video_path: str):
-    """用 ffmpeg 截取视频第 2 秒帧作为封面缩略图"""
-    if not video_path:
-        return
-    try:
-        fn = video_path.replace("/videos/", "")
-        video_file = _VIDEO_DIR / fn
-        poster_file = _VIDEO_DIR / f"{Path(fn).stem}.jpg"
-        if not video_file.exists() or poster_file.exists():
-            return
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", str(video_file), "-ss", "2", "-vframes", "1",
-             "-q:v", "3", str(poster_file)],
-            capture_output=True, timeout=15,
-            encoding="utf-8", errors="replace",
-        )
-    except Exception:
-        pass  # 缩略图生成失败不影响主流程
 
 logger = get_logger("celery")
 
@@ -103,7 +81,6 @@ def render_code_task(self, code: str):
             fn = video_path.replace("/videos/", "") if video_path else ""
             if fn:
                 scene = extract_scene_class_name(code) or "Manim"
-                _generate_poster(video_path)
                 save_video_meta(fn, title=f"{scene} 渲染")
             set_progress(task_id, state="SUCCESS", progress=100,
                          message="渲染完成", video_path=video_path, log=log, code=code)
@@ -135,7 +112,6 @@ def generate_full_task(self, requirement: str, max_retry: int = 3):
         if result.get("success"):
             fn = vp.replace("/videos/", "") if vp else ""
             if fn:
-                _generate_poster(vp)
                 save_video_meta(fn, title=requirement[:80])
             set_progress(task_id, state="SUCCESS", progress=100,
                          message="生成完成", video_path=vp,
@@ -191,7 +167,6 @@ def render_template_task(self, template_id: str, params: dict):
             if fn:
                 tpl = template_service.get_template_detail(template_id)
                 tpl_name = tpl[1].get("name", template_id) if tpl[0] else template_id
-                _generate_poster(video_path)
                 save_video_meta(fn, title=f"{tpl_name}")
             # 缓存结果：相同模板+参数下次秒级返回
             set_progress(f"tpl:{cache_key}", state="SUCCESS", progress=100,

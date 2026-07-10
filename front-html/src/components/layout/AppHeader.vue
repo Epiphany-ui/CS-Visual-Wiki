@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
 import AvatarIcon from '@/components/common/AvatarIcon.vue'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const appStore = useAppStore()
 const searchKeyword = ref('')
@@ -15,10 +16,16 @@ const themeSpinning = ref(false)
 const avatarUrl = ref('')
 const displayName = ref(userStore.username)
 
-try {
-  avatarUrl.value = localStorage.getItem('cs:avatar') || ''
-  displayName.value = localStorage.getItem('cs:nickname') || userStore.username
-} catch { /* ignore */ }
+function refreshProfile() {
+  try {
+    avatarUrl.value = localStorage.getItem('cs:avatar') || ''
+    displayName.value = localStorage.getItem('cs:nickname') || userStore.username
+  } catch { /* ignore */ }
+}
+refreshProfile()
+
+// 从 Profile 页返回时自动刷新头像和昵称
+watch(() => route.fullPath, () => refreshProfile())
 
 function handleSearch() {
   if (searchKeyword.value.trim()) {

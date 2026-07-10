@@ -87,8 +87,20 @@ class TemplateService:
         """重新加载所有模板（热更新用）"""
         self._load_templates()
 
+    def _refresh_use_counts(self):
+        """从磁盘重新同步 use_count（跨进程可见：Celery 写入 → FastAPI 可读，反之亦然）"""
+        for template_id, tpl_info in self._templates.items():
+            try:
+                meta_file = TEMPLATES_DIR / template_id / "meta.json"
+                if meta_file.exists():
+                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                    tpl_info.use_count = max(tpl_info.use_count, meta.get("use_count", 0))
+            except Exception:
+                pass
+
     def get_template_list(self, category: str = None) -> List[dict]:
         """获取模板列表，可按分类筛选"""
+        self._refresh_use_counts()  # 同步 Celery 或其他进程的写入
         items = []
         for tpl in self._templates.values():
             if category and tpl.category != category:
@@ -103,6 +115,22 @@ class TemplateService:
         if template_id not in self._templates:
             return False, f"模板 {template_id} 不存在"
         return True, self._templates[template_id].to_dict(include_params=True)
+
+    def _increment_use_count(self, template_id: str):
+        """递增模板使用次数并持久化到 meta.json"""
+        if template_id not in self._templates:
+            return
+        tpl_info = self._templates[template_id]
+        tpl_info.use_count += 1
+        # 持久化到 meta.json（静默失败）
+        try:
+            meta_file = TEMPLATES_DIR / template_id / "meta.json"
+            if meta_file.exists():
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                meta["use_count"] = tpl_info.use_count
+                meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
 
     def render_template_code(self, template_id: str, params: dict) -> Tuple[bool, str]:
         """
@@ -158,6 +186,7 @@ class TemplateService:
         try:
             template = jinja_env.get_template(f"{template_id}/template.py.j2")
             rendered_code = template.render(**processed_params)
+            self._increment_use_count(template_id)
             return True, rendered_code
         except TemplateNotFound:
             return False, f"模板文件 {template_id}/template.py.j2 不存在"

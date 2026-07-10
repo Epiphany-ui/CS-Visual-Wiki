@@ -32,6 +32,7 @@ from ai_engine import (
     render_manim_animation,
     fix_manim_code,
     rag_retrieve_references,
+    generate_video_poster,
     VIDEO_OUTPUT_SUBDIR,
     CODE_OUTPUT_SUBDIR,
 )
@@ -44,6 +45,7 @@ from services.progress_service import (
     list_videos, delete_video, list_tasks, delete_task, get_task_count,
     save_to_gallery, is_in_gallery, get_gallery_filenames,
     save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
+    add_to_user_works, get_user_works,
 )
 from services.config import settings
 from services.exceptions import (
@@ -759,10 +761,11 @@ async def api_task_stream(task_id: str):
 
 
 @app.get("/api/videos/list")
-async def api_videos_list(gallery: bool = False):
+async def api_videos_list(gallery: bool = False, my_works: bool = False, username: str = ""):
     """
     列出所有已生成的视频文件。
     ?gallery=true 时仅返回已收藏到画廊的视频。
+    ?my_works=true&username=xxx 时仅返回该用户的作品（服务端持久化）。
     每条记录会合并视频元数据（标题等）。
     """
     videos = list_videos()
@@ -777,19 +780,45 @@ async def api_videos_list(gallery: bool = False):
     if gallery:
         saved = get_gallery_filenames()
         videos = [v for v in videos if v.get("filename") in saved]
+    if my_works and username:
+        works = get_user_works(username)
+        videos = [v for v in videos if v.get("filename") in works]
     return success_response({"items": videos, "total": len(videos)})
 
 
 @app.post("/api/videos/{filename}/save")
-async def api_videos_save(filename: str):
+async def api_videos_save(filename: str, username: str = ""):
     """
     Toggle 画廊收藏：已收藏则取消，未收藏则添加。
+    同时加入用户作品列表（服务端持久化）。
     返回 {saved: true/false}。
     """
     if not _is_safe_filename(filename):
         return error_response("非法文件名")
     saved = save_to_gallery(filename)
+    # 同步到用户作品列表
+    if saved and username:
+        add_to_user_works(username, filename)
     return success_response({"filename": filename, "saved": saved}, "已收藏" if saved else "已取消收藏")
+
+
+@app.post("/api/user/works/sync")
+async def api_user_works_sync(username: str = "", works: str = ""):
+    """
+    将前端的本地作品列表同步到服务端 Redis。
+    POST body: { username: "xxx", works: "file1.mp4,file2.mp4" }
+    """
+    if not username:
+        return error_response("用户名不能为空")
+    filenames = [f.strip() for f in works.split(",") if f.strip().endswith(".mp4")]
+    for fn in filenames:
+        add_to_user_works(username, fn)
+    server_works = get_user_works(username)
+    return success_response({
+        "username": username,
+        "synced_count": len(filenames),
+        "total": len(server_works),
+    }, "同步完成")
 
 
 @app.patch("/api/videos/{filename}/title")
@@ -968,6 +997,31 @@ async def api_videos_download(filename: str):
         media_type="video/mp4",
         filename=filename,
     )
+
+
+@app.get("/api/videos/{filename}/thumbnail")
+async def api_videos_thumbnail(filename: str):
+    """获取视频缩略图（不存在则用 ffmpeg 懒生成并缓存为 .jpg）"""
+    if not _is_safe_filename(filename):
+        return error_response("非法文件名")
+
+    stem = Path(filename).stem
+    poster_file = VIDEO_OUTPUT_SUBDIR / f"{stem}.jpg"
+    video_file = VIDEO_OUTPUT_SUBDIR / filename
+
+    if not video_file.exists() and not poster_file.exists():
+        return error_response(f"视频 {filename} 不存在")
+
+    # 缩略图不存在则即时生成
+    if not poster_file.exists():
+        generate_video_poster(filename)
+
+    if poster_file.exists():
+        return FileResponse(
+            path=str(poster_file),
+            media_type="image/jpeg",
+        )
+    return error_response("缩略图生成失败，请确认 ffmpeg 已安装")
 
 
 @app.post("/api/videos/{filename}/convert/gif")

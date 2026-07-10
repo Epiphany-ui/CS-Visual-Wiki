@@ -2,10 +2,14 @@
   "name": "排序算法可视化",
   "description": "直观展示各类排序算法的执行过程，支持调整数组大小、动画速度，可选择冒泡/选择/插入/快速/归并排序",
   "category": "算法",
-  "tags": ["排序", "算法", "数据结构"],
+  "tags": [
+    "排序",
+    "算法",
+    "数据结构"
+  ],
   "difficulty": "入门",
   "cover": "",
-  "use_count": 0,
+  "use_count": 1,
   "params": [
     {
       "name": "algorithm",
@@ -15,11 +19,26 @@
       "default": "bubble",
       "description": "选择要演示的排序算法",
       "options": [
-        {"label": "冒泡排序", "value": "bubble"},
-        {"label": "选择排序", "value": "selection"},
-        {"label": "插入排序", "value": "insertion"},
-        {"label": "快速排序", "value": "quick"},
-        {"label": "归并排序", "value": "merge"}
+        {
+          "label": "冒泡排序",
+          "value": "bubble"
+        },
+        {
+          "label": "选择排序",
+          "value": "selection"
+        },
+        {
+          "label": "插入排序",
+          "value": "insertion"
+        },
+        {
+          "label": "快速排序",
+          "value": "quick"
+        },
+        {
+          "label": "归并排序",
+          "value": "merge"
+        }
       ]
     },
     {

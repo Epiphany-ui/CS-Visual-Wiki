@@ -24,6 +24,8 @@ function getMyWorks(): string[] {
 const videos = computed(() => {
   if (activeTab.value === 'stars') return starredVideos.value
   if (activeTab.value === 'my-works') {
+    // 优先使用服务端数据，fallback 到 localStorage
+    if (serverMyWorks.value.length > 0) return serverMyWorks.value
     const works = getMyWorks()
     return allVideos.value.filter(v => works.includes(v.filename))
   }
@@ -50,6 +52,22 @@ async function loadStars() {
   try {
     const res = await videosApi.getList(true)  // starred only
     starredVideos.value = res.data.data?.items || []
+  } catch { /* ignore */ }
+}
+
+// 从服务端加载"我的作品"列表（跨设备同步，不依赖 localStorage）
+const serverMyWorks = ref<VideoFile[]>([])
+async function loadMyWorksFromServer() {
+  const name = localStorage.getItem('cs:nickname') || localStorage.getItem('username') || ''
+  if (!name) return
+  try {
+    const res = await videosApi.getMyWorks(name)
+    serverMyWorks.value = res.data.data?.items || []
+    // 降级：合并 localStorage 中可能有但服务端还没有的
+    const local = getMyWorks()
+    if (local.length > 0) {
+      await videosApi.syncMyWorks(name, local).catch(() => {})
+    }
   } catch { /* ignore */ }
 }
 
@@ -99,7 +117,7 @@ async function syncPendingTasks() {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { loadAll().then(() => loadStars()).then(() => syncPendingTasks()) })
+onMounted(() => { loadAll().then(() => loadStars()).then(() => syncPendingTasks()).then(() => loadMyWorksFromServer()) })
 watch(() => route.query.tab, (t) => {
   if (t === 'all' || t === 'my-works' || t === 'stars') activeTab.value = t
 })
@@ -130,7 +148,7 @@ watch(() => route.query.tab, (t) => {
     <div class="gallery-grid" v-loading="loading">
       <div v-for="v in sortedVideos" :key="v.filename" class="g-card glass-card" @click="router.push(`/gallery/${v.filename}`)">
         <div class="g-thumb">
-          <img :src="`http://localhost:8000/videos/${v.filename.replace('.mp4','')}.jpg`"
+          <img :src="(v as any).poster || videosApi.getThumbnailUrl(v.filename)"
                loading="lazy"
                class="g-thumb-img"
                @error="($event.target as HTMLImageElement).style.display='none'"

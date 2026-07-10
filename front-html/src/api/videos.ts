@@ -41,6 +41,25 @@ export const videosApi = {
     })
   },
 
+  /** 获取缩略图 URL（API 懒生成 + 缓存） */
+  getThumbnailUrl(filename: string): string {
+    return `${VIDEO_BASE}/api/videos/${filename}/thumbnail`
+  },
+
+  /** 获取用户作品列表（服务端） */
+  getMyWorks(username: string) {
+    return pythonClient.get<ApiResponse<{ items: VideoFile[]; total: number }>>('/api/videos/list', {
+      params: { my_works: true, username, _: Date.now() },
+    })
+  },
+
+  /** 同步本地作品列表到服务端 */
+  async syncMyWorks(username: string, filenames: string[]) {
+    return pythonClient.post<ApiResponse<{ synced_count: number; total: number }>>('/api/user/works/sync', null, {
+      params: { username, works: filenames.join(',') },
+    })
+  },
+
   /** 删除视频 */
   deleteVideo(filename: string) {
     return pythonClient.delete(`/api/videos/${filename}`)

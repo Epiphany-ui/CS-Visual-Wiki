@@ -67,12 +67,17 @@ function onSSEEvent(evt: SSETaskEvent) {
     videoPath.value = evt.video_path
     videoUrl.value = `http://localhost:8000${evt.video_path}`
     currentFilename.value = evt.video_path.replace('/videos/', '')
-    // 加入"我的作品"
+    // 加入"我的作品"（localStorage + 服务端双写）
     try {
       const works = JSON.parse(localStorage.getItem('cs:my-works') || '[]')
       if (!works.includes(currentFilename.value)) {
         works.unshift(currentFilename.value)
         localStorage.setItem('cs:my-works', JSON.stringify(works.slice(0, 50)))
+      }
+      // 同步到服务端（跨设备持久化）
+      const name = localStorage.getItem('cs:nickname') || localStorage.getItem('username') || ''
+      if (name) {
+        videosApi.syncMyWorks(name, [currentFilename.value]).catch(() => {})
       }
     } catch { /* ignore */ }
   }
