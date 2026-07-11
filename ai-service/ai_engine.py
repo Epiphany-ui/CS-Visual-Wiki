@@ -339,12 +339,13 @@ def preflight_code_check(code: str) -> Tuple[bool, str]:
     return True, ""
 
 
-def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool, str, str]:
+def render_manim_animation(code_str: str, progress_callback=None, quality: str = None) -> Tuple[bool, str, str]:
     """
     渲染 Manim 动画代码，返回 (成功, 日志, 视频路径)
     :param code_str: Manim Python 代码
     :param progress_callback: 可选进度回调，签名为 callback(state, message)
            state: 'started' | 'rendering' | 'success' | 'failed'
+    :param quality: 渲染质量 -ql(480p) / -qm(720p) / -qh(1080p)，默认使用环境变量
     """
     task_id = uuid.uuid4().hex[:8]
     code_file_path = CODE_OUTPUT_SUBDIR / f"{task_id}.py"
@@ -358,10 +359,11 @@ def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool,
         if not scene_name:
             return False, "❌ 渲染失败：代码中未找到继承Scene的场景类", ""
 
+        quality_flag = quality or RENDER_QUALITY_FLAG
         render_command = [
             sys.executable,
             "-m", "manim",
-            RENDER_QUALITY_FLAG,
+            quality_flag,
             str(code_file_path.absolute()),
             scene_name,
             "-o", str(video_output_path.absolute())
@@ -478,7 +480,7 @@ def fix_manim_code(original_code: str, error_message: str, context: str = None) 
     return True, fixed_code
 
 
-def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIMES, progress_callback=None) -> Dict:
+def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIMES, progress_callback=None, quality: str = None) -> Dict:
     result = {"success": False, "code": "", "video_path": "", "try_count": 0, "log": ""}
     current_code = ""
     all_logs = []
@@ -506,7 +508,7 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
         current_code = gen_result
         result["code"] = current_code
         _report("rendering", "代码生成完成，开始渲染动画...", 20)
-        render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback)
+        render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback, quality=quality)
         all_logs.append(f"第1次渲染：\n{render_log}")
 
         if render_success:
@@ -531,7 +533,7 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
             result["code"] = current_code
 
             _report("rendering", f"第{current_try}次渲染中...", 40 + retry_index * 20)
-            render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback)
+            render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback, quality=quality)
             all_logs.append(f"第{current_try}次渲染：\n{render_log}")
 
             if render_success:

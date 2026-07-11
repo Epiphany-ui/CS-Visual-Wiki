@@ -100,7 +100,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS = {"/videos", "/frames", "/docs", "/openapi.json", "/redoc", "/api/debug", "/health"}
 
     # 生成类路径前缀（更严格的限制）
-    GENERATE_PATHS = {"/api/generate", "/api/async", "/api/render", "/api/ai/fix-code"}
+    GENERATE_PATHS = {"/api/generate", "/api/async/generate", "/api/render", "/api/ai/fix-code"}
 
     async def dispatch(self, request: Request, call_next):
         if not settings.rate_limit_enabled:

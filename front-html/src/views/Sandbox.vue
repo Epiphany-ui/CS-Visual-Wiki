@@ -26,6 +26,7 @@ const savedToGallery = ref(false)
 const currentFilename = ref('')
 const publishDialogVisible = ref(false)
 const publishDesc = ref('')
+const renderQuality = ref(localStorage.getItem('cs:render-quality') || '-qm')
 let _activeTaskId = ''
 let _progressTimer: ReturnType<typeof setInterval> | null = null
 let _progressTarget = 0
@@ -201,12 +202,12 @@ function restoreTaskFromSession() {
 // --- 操作 ---
 function handleGenerate() {
   if (!requirement.value.trim()) return
-  startAsyncTask(() => generationApi.asyncGenerate(requirement.value.trim()))
+  startAsyncTask(() => generationApi.asyncGenerate(requirement.value.trim(), 3, renderQuality.value))
 }
 
 function handleRender() {
   if (!code.value.trim()) { ElMessage.warning('请先输入或生成 Manim 代码'); return }
-  startAsyncTask(() => generationApi.asyncRender(code.value))
+  startAsyncTask(() => generationApi.asyncRender(code.value, renderQuality.value))
 }
 
 async function handleCancelTask() {
@@ -356,6 +357,11 @@ onUnmounted(() => {
     <div class="sb-toolbar">
       <h1 class="sb-title"><el-icon :size="22"><EditPen /></el-icon> 动画沙箱</h1>
       <div class="sb-actions">
+        <el-select v-model="renderQuality" size="small" style="width:110px" @change="(v: string) => localStorage.setItem('cs:render-quality', v)">
+          <el-option label="⚡ 480p" value="-ql" />
+          <el-option label="🎯 720p" value="-qm" />
+          <el-option label="✨ 1080p" value="-qh" />
+        </el-select>
         <el-button :loading="generating" type="primary" round @click="handleGenerate">
           <el-icon><MagicStick /></el-icon> AI 生成
         </el-button>

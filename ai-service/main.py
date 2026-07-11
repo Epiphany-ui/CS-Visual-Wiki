@@ -858,11 +858,13 @@ class AsyncGenerateRequest(BaseModel):
     requirement: str
     max_retry: int = 3
     context: Optional[str] = None
+    quality: Optional[str] = None  # -ql(480p) / -qm(720p) / -qh(1080p)
 
 
 class AsyncRenderRequest(BaseModel):
     """异步渲染请求"""
     code: str
+    quality: Optional[str] = None
 
 
 @app.post("/api/user/avatar")
@@ -890,6 +892,7 @@ class AsyncTemplateRequest(BaseModel):
     """异步模板渲染请求"""
     template_id: str
     params: dict = {}
+    quality: Optional[str] = None
 
 
 @app.post("/api/async/generate")
@@ -900,7 +903,7 @@ async def api_async_generate(req: AsyncGenerateRequest):
     """
     try:
         from workers.celery_app import generate_full_task
-        task = generate_full_task.delay(req.requirement, req.max_retry)
+        task = generate_full_task.delay(req.requirement, req.max_retry, req.quality)
         logger.info("[async] generate task dispatched: %s", task.id)
         return success_response({"task_id": task.id}, "任务已提交")
     except Exception as e:
@@ -921,7 +924,7 @@ async def api_async_render(req: AsyncRenderRequest):
 
     try:
         from workers.celery_app import render_code_task
-        task = render_code_task.delay(req.code)
+        task = render_code_task.delay(req.code, req.quality)
         logger.info("[async] render task dispatched: %s", task.id)
         return success_response({
             "task_id": task.id,
@@ -939,7 +942,7 @@ async def api_async_template_render(req: AsyncTemplateRequest):
     """
     try:
         from workers.celery_app import render_template_task
-        task = render_template_task.delay(req.template_id, req.params)
+        task = render_template_task.delay(req.template_id, req.params, req.quality)
         logger.info("[async] template task dispatched: %s (template=%s)", task.id, req.template_id)
         return success_response({"task_id": task.id}, "模板渲染任务已提交")
     except Exception as e:
@@ -1293,11 +1296,18 @@ if __name__ == "__main__":
         reload=True,
         reload_excludes=[
             "outputs/**",       # 渲染产物：Celery 写入代码/视频会触发重载
+            "outputs\\**",      # Windows 路径兼容
             "logs/**",          # 日志文件
+            "logs\\**",
             "chroma_db/**",     # 向量库：build_kb 会修改
+            "chroma_db\\**",
             "cache/**",         # 缓存目录
+            "cache\\**",
             "__pycache__/**",
-            "*.pyc",
-            "*.log",
+            "__pycache__\\**",
+            "**/*.pyc",
+            "**/*.log",
+            "media/**",         # Manim 渲染中间文件
+            "media\\**",
         ],
     )

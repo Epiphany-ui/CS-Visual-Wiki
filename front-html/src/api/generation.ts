@@ -41,25 +41,28 @@ export const generationApi = {
   },
 
   /** 异步全流程生成 */
-  asyncGenerate(requirement: string, maxRetry = 3) {
+  asyncGenerate(requirement: string, maxRetry = 3, quality?: string) {
     return pythonClient.post<ApiResponse<{ task_id: string }>>('/api/async/generate', {
       requirement,
       max_retry: maxRetry,
+      quality,
     })
   },
 
   /** 异步渲染 */
-  asyncRender(code: string) {
+  asyncRender(code: string, quality?: string) {
     return pythonClient.post<ApiResponse<{ task_id: string; warnings?: unknown[] }>>('/api/async/render', {
       code,
+      quality,
     })
   },
 
   /** 异步模板渲染 */
-  asyncTemplateRender(templateId: string, params: Record<string, unknown>) {
+  asyncTemplateRender(templateId: string, params: Record<string, unknown>, quality?: string) {
     return pythonClient.post<ApiResponse<{ task_id: string }>>('/api/async/template-render', {
       template_id: templateId,
       params,
+      quality,
     })
   },
 }

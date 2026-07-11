@@ -89,14 +89,14 @@ def _make_render_callback(task_id: str):
 
 
 @celery_app.task(bind=True, max_retries=2)
-def render_code_task(self, code: str):
+def render_code_task(self, code: str, quality: str = None):
     """异步渲染已有Manim代码"""
     task_id = self.request.id
     set_progress(task_id, state="STARTED", progress=0, message="任务已接收，准备渲染...")
 
     try:
         on_progress = _make_render_callback(task_id)
-        success, log, video_path = render_manim_animation(code, progress_callback=on_progress)
+        success, log, video_path = render_manim_animation(code, progress_callback=on_progress, quality=quality)
 
         if success:
             if _cleanup_if_cancelled(task_id, video_path):
@@ -121,14 +121,14 @@ def render_code_task(self, code: str):
 
 
 @celery_app.task(bind=True, max_retries=2)
-def generate_full_task(self, requirement: str, max_retry: int = 3):
+def generate_full_task(self, requirement: str, max_retry: int = 3, quality: str = None):
     """异步完整生成流水线（需求→代码→渲染→修复）"""
     task_id = self.request.id
     set_progress(task_id, state="STARTED", progress=0, message="任务已接收，AI 正在生成代码...")
 
     try:
         on_progress = _make_render_callback(task_id)
-        result = run_full_pipeline(requirement, max_retry=max_retry, progress_callback=on_progress)
+        result = run_full_pipeline(requirement, max_retry=max_retry, progress_callback=on_progress, quality=quality)
 
         vp = result.get("video_path", "")
         code_str = result.get("code", "")
@@ -157,7 +157,7 @@ def generate_full_task(self, requirement: str, max_retry: int = 3):
 
 
 @celery_app.task(bind=True, max_retries=2)
-def render_template_task(self, template_id: str, params: dict):
+def render_template_task(self, template_id: str, params: dict, quality: str = None):
     """异步模板渲染任务（带代码缓存：相同代码跳过渲染）"""
     import hashlib
     task_id = self.request.id
@@ -187,7 +187,7 @@ def render_template_task(self, template_id: str, params: dict):
 
         # 2. 渲染
         on_progress = _make_render_callback(task_id)
-        success, log, video_path = render_manim_animation(code, progress_callback=on_progress)
+        success, log, video_path = render_manim_animation(code, progress_callback=on_progress, quality=quality)
 
         if success:
             if _cleanup_if_cancelled(task_id, video_path):

@@ -11,6 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const { connect, disconnect } = useSSE()
 const template = ref<TemplateDetail | null>(null)
+const renderQuality = ref(localStorage.getItem('cs:render-quality') || '-qm')
 const loading = ref(false)
 const generating = ref(false)
 const progress = ref(0)
@@ -63,7 +64,7 @@ async function handleGenerate() {
   generating.value = true
   startTplProgress()
   try {
-    const res = await generationApi.asyncTemplateRender(template.value.id, formParams)
+    const res = await generationApi.asyncTemplateRender(template.value.id, formParams, renderQuality.value)
     const taskId = res.data.data?.task_id
     if (taskId) {
       connect(taskId, (data: any) => {
@@ -101,9 +102,16 @@ onUnmounted(() => { disconnect(); stopTplProgress() })
               <el-option v-for="o in p.options" :key="o.value" :label="o.label" :value="o.value" />
             </el-select>
           </div>
-          <el-button type="primary" size="large" round :loading="generating" @click="handleGenerate" class="gen-btn">
-            <el-icon><MagicStick /></el-icon> 生成动画
-          </el-button>
+          <div style="display:flex;gap:8px;margin-top:var(--space-md)">
+            <el-select v-model="renderQuality" size="small" style="width:110px" @change="(v: string) => localStorage.setItem('cs:render-quality', v)">
+              <el-option label="⚡ 480p" value="-ql" />
+              <el-option label="🎯 720p" value="-qm" />
+              <el-option label="✨ 1080p" value="-qh" />
+            </el-select>
+            <el-button type="primary" size="large" round :loading="generating" @click="handleGenerate" class="gen-btn" style="flex:1">
+              <el-icon><MagicStick /></el-icon> 生成动画
+            </el-button>
+          </div>
         </div>
 
         <!-- 预览区 -->
