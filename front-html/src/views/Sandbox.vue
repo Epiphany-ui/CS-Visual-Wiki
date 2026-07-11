@@ -351,10 +351,16 @@ async function startAsyncTask(apiCall: () => Promise<any>) {
 onMounted(() => {
   const prompt = route.query.prompt as string
   if (prompt) {
-    // 从百科/首页跳转过来 → 用新的 prompt，但保留代码
+    // 从百科/首页跳转过来 → 全新任务，自动开始生成
     requirement.value = prompt
-    restoreState() // 恢复代码、视频等
+    code.value = ''
+    videoUrl.value = ''
+    videoPath.value = ''
+    currentFilename.value = ''
+    logOutput.value = ''
+    typingActive.value = false
     localStorage.removeItem('cs:active-task')
+    nextTick(() => handleGenerate())
   } else {
     // 正常导航返回 → 恢复之前的状态
     restoreState()
