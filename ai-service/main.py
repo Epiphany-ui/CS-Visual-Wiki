@@ -33,7 +33,6 @@ from ai_engine import (
     fix_manim_code,
     rag_retrieve_references,
     generate_video_poster,
-    validate_requirement,
     VIDEO_OUTPUT_SUBDIR,
     CODE_OUTPUT_SUBDIR,
 )
@@ -47,6 +46,11 @@ from services.progress_service import (
     save_to_gallery, is_in_gallery, get_gallery_filenames,
     save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
     add_to_user_works, get_user_works, mark_task_cancelled,
+)
+from services.comment_service import (
+    toggle_like, is_liked, get_like_counts, check_user_likes,
+    increment_view, get_view_counts,
+    add_comment, get_comments, get_comment_count, like_comment,
 )
 from services.config import settings
 from services.exceptions import (
@@ -303,15 +307,8 @@ async def api_generate_animation(req: GenerateRequest):
     完整流水线：输入知识点描述 → AI 生成代码 → 自动渲染 → 失败自动修复重试
     返回生成的代码、视频地址、尝试次数、日志
     """
-    check = validate_requirement(req.requirement)
-    if not check["valid"]:
-        return error_response(check["suggestion"])
     try:
         result = run_full_pipeline(req.requirement, max_retry=req.max_retry)
-        # 如果所有重试都失败，返回友好消息
-        if not result.get("success"):
-            friendly_msg = _friendly_fail_message(req.requirement, result)
-            result["log"] = friendly_msg
         return success_response(result, "任务执行完成")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -320,9 +317,6 @@ async def api_generate_animation(req: GenerateRequest):
 @app.post("/api/ai/generate-code")
 async def api_generate_code(req: GenerateCodeRequest):
     """只生成 Manim 代码，不执行渲染"""
-    check = validate_requirement(req.requirement)
-    if not check["valid"]:
-        return error_response(check["suggestion"])
     try:
         success, result = generate_manim_code(req.requirement)
         if not success:
@@ -373,31 +367,6 @@ async def api_rag_retrieve(req: RetrieveRequest):
 def _is_safe_filename(filename: str) -> bool:
     """防止路径穿越攻击：文件名不得包含 .. 或路径分隔符"""
     return ".." not in filename and "/" not in filename and "\\" not in filename
-
-
-def _friendly_fail_message(requirement: str, result: dict) -> str:
-    """将渲染失败日志转换为对用户友好的消息"""
-    log = result.get("log", "")
-    try_count = result.get("try_count", 0)
-    if not result.get("code"):
-        return (
-            f"您的需求「{requirement[:50]}」未能被 AI 理解并生成有效代码。\n"
-            "建议尝试更具体的描述，例如：\n"
-            "  · 冒泡排序算法可视化\n"
-            "  · 二叉树的遍历动画\n"
-            "  · 快速排序过程演示"
-        )
-    if "ModuleNotFoundError" in log or "ImportError" in log:
-        return "渲染失败：缺少所需的 Python 库。请联系管理员安装依赖。"
-    if "Timeout" in log or "超时" in log:
-        return f"渲染超时（尝试 {try_count} 次后放弃）。动画可能过于复杂，建议简化。"
-    return (
-        f"渲染未能成功完成（尝试 {try_count} 次后放弃）。\n"
-        "您可以尝试：\n"
-        "  1. 修改需求描述，使其更具体\n"
-        "  2. 参考右侧快速模板\n"
-        "  3. 检查 Celery Worker 是否正常运行"
-    )
 
 # ===================== 百科词条接口 =====================
 WIKI_DATA_DIR = Path(__file__).resolve().parent / "wiki_data"
@@ -797,15 +766,6 @@ async def api_task_stream(task_id: str):
     )
 
 
-# ===================== 视频文件列表 =====================
-
-@app.get("/api/videos/filenames")
-async def api_videos_filenames():
-    """返回所有现有视频的文件名列表（轻量，供社区页面做存在性校验）"""
-    videos = list_videos()
-    return success_response([v["filename"] for v in videos], "ok")
-
-
 @app.get("/api/videos/list")
 async def api_videos_list(gallery: bool = False, my_works: bool = False, username: str = ""):
     """
@@ -891,30 +851,6 @@ async def api_videos_delete(filename: str):
     return error_response(f"文件 {filename} 不存在")
 
 
-# ===================== 视频代码读取 =====================
-
-@app.get("/api/videos/{filename}/code")
-async def api_videos_code(filename: str, format: str = "json"):
-    """读取生成视频时使用的 Manim 代码"""
-    if not filename.endswith(".mp4"):
-        return error_response("仅支持 .mp4 文件")
-    if not _is_safe_filename(filename):
-        return error_response("非法文件名")
-
-    from pathlib import Path
-    code_path = CODE_OUTPUT_SUBDIR / f"{Path(filename).stem}.py"
-    if not code_path.exists():
-        return error_response(f"代码文件 {code_path.name} 不存在")
-
-    code_text = code_path.read_text(encoding="utf-8")
-
-    if format == "raw":
-        from fastapi.responses import PlainTextResponse
-        return PlainTextResponse(code_text, media_type="text/plain; charset=utf-8")
-
-    return success_response({"code": code_text, "filename": code_path.name}, "读取成功")
-
-
 # ===================== v1.0 异步任务端点（Celery 驱动） =====================
 
 class AsyncGenerateRequest(BaseModel):
@@ -962,9 +898,6 @@ async def api_async_generate(req: AsyncGenerateRequest):
      异步全流程生成：提交需求 → 立即返回 task_id → Celery Worker 后台处理。
     前端通过 GET /api/tasks/{task_id}/stream (SSE) 获取实时进度。
     """
-    check = validate_requirement(req.requirement)
-    if not check["valid"]:
-        return error_response(check["suggestion"])
     try:
         from workers.celery_app import generate_full_task
         task = generate_full_task.delay(req.requirement, req.max_retry)
@@ -1140,6 +1073,83 @@ async def api_videos_convert_gif(filename: str, fps: int = 10, width: int = 480)
         return error_response("未找到 ffmpeg，请先安装 ffmpeg")
     except subprocess.TimeoutExpired:
         return error_response("GIF 转换超时（60s）")
+
+
+# ===================== v1.0 社区互动 API（评论、点赞、浏览） =====================
+
+@app.post("/api/community/like/{work_id}")
+async def api_toggle_like(work_id: int, username: str = ""):
+    """Toggle 点赞"""
+    if not username:
+        return error_response("用户名不能为空")
+    result = toggle_like(work_id, username)
+    return success_response(result, "已点赞" if result["liked"] else "已取消")
+
+
+@app.get("/api/community/likes")
+async def api_get_likes(ids: str = ""):
+    """批量获取点赞数 ?ids=1,2,3"""
+    try:
+        work_ids = [int(x) for x in ids.split(",") if x.strip()]
+        counts = get_like_counts(work_ids)
+        return success_response({"counts": counts})
+    except Exception:
+        return error_response("参数格式错误")
+
+
+@app.get("/api/community/likes/check")
+async def api_check_likes(ids: str = "", username: str = ""):
+    """查询用户是否已点赞 ?ids=1,2,3&username=xxx"""
+    try:
+        work_ids = [int(x) for x in ids.split(",") if x.strip()]
+        liked = check_user_likes(work_ids, username)
+        return success_response({"liked": liked})
+    except Exception:
+        return error_response("参数格式错误")
+
+
+@app.get("/api/community/views")
+async def api_get_views(ids: str = ""):
+    """批量获取浏览量 & 递增"""
+    try:
+        work_ids = [int(x) for x in ids.split(",") if x.strip()]
+        counts = get_view_counts(work_ids)
+        return success_response({"counts": counts})
+    except Exception:
+        return error_response("参数格式错误")
+
+
+@app.post("/api/community/view/{work_id}")
+async def api_increment_view(work_id: int):
+    """递增浏览量（播放视频时调用）"""
+    count = increment_view(work_id)
+    return success_response({"count": count})
+
+
+@app.get("/api/community/comments/{work_id}")
+async def api_get_comments(work_id: int, limit: int = 3, sort: str = "likes"):
+    """获取评论列表"""
+    comments = get_comments(work_id, limit=limit, sort_by=sort)
+    total = get_comment_count(work_id)
+    return success_response({"comments": comments, "total": total})
+
+
+@app.post("/api/community/comments/{work_id}")
+async def api_add_comment(work_id: int, username: str = "", text: str = "", avatar: str = ""):
+    """发表评论"""
+    if not username or not text:
+        return error_response("用户名和评论内容不能为空")
+    if len(text) > 500:
+        return error_response("评论不能超过500字")
+    comment = add_comment(work_id, username, text, avatar)
+    return success_response({"comment": comment}, "评论发表成功")
+
+
+@app.post("/api/community/comments/{work_id}/like/{comment_id}")
+async def api_like_comment(work_id: int, comment_id: str, username: str = ""):
+    """给评论点赞/取消点赞"""
+    result = like_comment(comment_id, work_id, username)
+    return success_response({"commentId": comment_id, "liked": result["liked"], "likes": result["likes"]})
 
 
 # ===================== v1.0 逐帧调试 API =====================

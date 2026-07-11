@@ -61,12 +61,6 @@ public class AuthFilter implements Filter {
         String requestPath = request.getRequestURI();
 
         try {
-            // CORS 预检请求（OPTIONS）直接放行
-            if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
             // 白名单路径直接放行
             if (isWhitelisted(requestPath)) {
                 filterChain.doFilter(request, response);
@@ -105,10 +99,6 @@ public class AuthFilter implements Filter {
      */
     private void writeJsonResponse(HttpServletResponse response, int code, String msg) throws IOException {
         response.setContentType("application/json;charset=UTF-8");
-        response.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
-        response.setHeader("Access-Control-Allow-Credentials", "true");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         String json = objectMapper.writeValueAsString(Result.fail(code, msg));
         response.getWriter().write(json);

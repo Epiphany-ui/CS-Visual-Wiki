@@ -34,12 +34,6 @@ public interface WorkService {
 
     void updateWork(Work work);
 
-    /** 删除作品（物理删除） */
-    void deleteWork(Integer workId);
-
-    /** 根据视频路径删除作品 */
-    void deleteByVideoPath(String videoPath);
-
     void incrementViewCount(Integer workId);
 
     // 点赞

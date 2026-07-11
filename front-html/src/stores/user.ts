@@ -64,11 +64,6 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('token')
     localStorage.removeItem('username')
     localStorage.removeItem('userId')
-    // 清理业务数据，避免换账号后看到旧数据
-    localStorage.removeItem('cs:my-works')
-    localStorage.removeItem('cs:published-works')
-    localStorage.removeItem('cs:pending-tasks')
-    localStorage.removeItem('cs:active-task')
     // 不清除 per-user 头像/昵称 — 下次同账号登录时自动恢复
   }
 

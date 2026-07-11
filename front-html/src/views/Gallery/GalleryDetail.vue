@@ -2,8 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { videosApi } from '@/api/videos'
-import { workApi } from '@/api/work'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,18 +15,6 @@ const saved = ref(false)
 const videoTitle = ref('')
 const editingTitle = ref(false)
 const titleInput = ref('')
-const deleting = ref(false)
-const canDelete = ref(false)
-
-/** 检查当前用户是否有权删除：创建者（my-works 中有此视频）或管理员 */
-function checkCanDelete() {
-  const username = localStorage.getItem('username')
-  if (username === 'admin') { canDelete.value = true; return }
-  const raw = localStorage.getItem('cs:my-works')
-  if (raw) {
-    try { canDelete.value = JSON.parse(raw).includes(filename) } catch { /* ignore */ }
-  }
-}
 
 async function loadTitle() {
   try {
@@ -81,39 +68,7 @@ async function handleConvertGif() {
   finally { converting.value = false }
 }
 
-async function handleDelete() {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除视频「${videoTitle.value}」吗？\n对应的代码文件也将被删除，此操作不可撤销。`,
-      '删除确认',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch { return }
-
-  deleting.value = true
-  try {
-    await videosApi.deleteVideo(filename)
-    // 同步删除已发布到社区的作品记录
-    try { await workApi.deleteByVideoPath(`/videos/${filename}`) } catch { /* 无发布记录时忽略 */ }
-    ElMessage.success('视频已删除')
-    // 从 localStorage 的 my-works 中移除
-    const raw = localStorage.getItem('cs:my-works')
-    if (raw) {
-      try {
-        const list: string[] = JSON.parse(raw)
-        const idx = list.indexOf(filename)
-        if (idx !== -1) { list.splice(idx, 1); localStorage.setItem('cs:my-works', JSON.stringify(list)) }
-      } catch { /* ignore */ }
-    }
-    router.back()
-  } catch {
-    ElMessage.error('删除失败')
-  } finally {
-    deleting.value = false
-  }
-}
-
-onMounted(() => { checkSaved(); loadTitle(); checkCanDelete() })
+onMounted(() => { checkSaved(); loadTitle() })
 </script>
 
 <template>
@@ -143,9 +98,6 @@ onMounted(() => { checkSaved(); loadTitle(); checkCanDelete() })
       <el-button round :loading="converting" @click="handleConvertGif"><el-icon><PictureFilled /></el-icon> 转为 GIF</el-button>
       <el-button round :type="saved ? 'warning' : 'default'" @click="handleSave">
         <el-icon><StarFilled v-if="saved" /><Star v-else /></el-icon> {{ saved ? '已收藏' : '收藏' }}
-      </el-button>
-      <el-button v-if="canDelete" round type="danger" :loading="deleting" @click="handleDelete">
-        <el-icon><Delete /></el-icon> 删除
       </el-button>
     </div>
 

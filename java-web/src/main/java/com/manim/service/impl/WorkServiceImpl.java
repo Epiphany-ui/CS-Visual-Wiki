@@ -160,18 +160,6 @@ public class WorkServiceImpl implements WorkService {
     }
 
     @Override
-    public void deleteWork(Integer workId) {
-        workMapper.deleteById(workId);
-    }
-
-    @Override
-    public void deleteByVideoPath(String videoPath) {
-        QueryWrapper<Work> qw = new QueryWrapper<>();
-        qw.eq("video_path", videoPath);
-        workMapper.delete(qw);
-    }
-
-    @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean toggleLike(Integer workId, Integer userId, boolean isLike) {
         Work work = workMapper.selectById(workId);

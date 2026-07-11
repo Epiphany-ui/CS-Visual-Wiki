@@ -1,9 +1,9 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-// Java 业务后端 (port 8080, 带 /api/v1 路径前缀)
+// Java 业务后端 (port 8080)
 export const javaClient = axios.create({
-  baseURL: 'http://localhost:8080/api/v1',
+  baseURL: 'http://localhost:8080',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -40,19 +40,11 @@ const errorInterceptor = (error: any) => {
       localStorage.removeItem('token')
       localStorage.removeItem('username')
       localStorage.removeItem('userId')
-      localStorage.removeItem('cs:my-works')
-      localStorage.removeItem('cs:published-works')
-      localStorage.removeItem('cs:pending-tasks')
-      localStorage.removeItem('cs:active-task')
       window.location.hash = '#/login'
     } else if (status === 429) {
       ElMessage.warning('请求过于频繁，请稍后重试')
     } else if (status >= 500) {
       ElMessage.error(data?.detail || data?.message || '服务器内部错误')
-    } else {
-      // 400 / 403 / 404 等，显示后端返回的具体错误
-      const msg = data?.message || data?.msg || data?.detail || `请求失败（${status}）`
-      ElMessage.error(msg)
     }
   } else {
     ElMessage.error('网络连接失败，请检查后端服务')

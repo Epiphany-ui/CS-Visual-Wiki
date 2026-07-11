@@ -1,9 +1,5 @@
 package com.manim.utils;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
-
 /**
  * 当前请求用户上下文（ThreadLocal）
  * <p>
@@ -11,13 +7,12 @@ import java.util.Set;
  * Controller / Service 层可直接通过 {@link #getUsername()} 获取当前登录用户，
  * 避免在方法参数中层层传递。
  * </p>
+ * <b>注意：</b>请求结束后必须在 Filter 中调用 {@link #remove()} 清理，防止内存泄漏。
+ * </p>
  */
 public class UserContext {
 
     private static final ThreadLocal<String> USERNAME_HOLDER = new ThreadLocal<>();
-
-    /** 管理员用户名列表（与前端保持一致） */
-    private static final Set<String> ADMIN_USERNAMES = new HashSet<>(Arrays.asList("admin"));
 
     /**
      * 设置当前请求的用户名
@@ -31,14 +26,6 @@ public class UserContext {
      */
     public static String getUsername() {
         return USERNAME_HOLDER.get();
-    }
-
-    /**
-     * 当前用户是否为管理员
-     */
-    public static boolean isAdmin() {
-        String username = getUsername();
-        return username != null && ADMIN_USERNAMES.contains(username);
     }
 
     /**

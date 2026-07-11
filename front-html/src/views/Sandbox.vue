@@ -14,7 +14,6 @@ const taskStore = useTaskStore()
 const { connect, disconnect } = useSSE()
 
 const requirement = ref('')
-const requirementWarn = ref('')
 const code = ref('')
 const videoPath = ref('')
 const videoUrl = ref('')
@@ -29,7 +28,6 @@ const publishDialogVisible = ref(false)
 const publishDesc = ref('')
 let _activeTaskId = ''
 let _progressTimer: ReturnType<typeof setInterval> | null = null
-let _progressTimeout: ReturnType<typeof setTimeout> | null = null
 let _progressTarget = 0
 let _taskCompleted = false // 防止 onerror 覆盖已完成的结果
 
@@ -82,20 +80,10 @@ function startSmoothProgress(fromPct = 0) {
       _progressTarget += 0.3
     }
   }, 300)
-  // 5 分钟超时：任务未完成则停止进度并提示
-  _progressTimeout = setTimeout(() => {
-    if (!_taskCompleted && generating.value) {
-      stopSmoothProgress()
-      progressMsg.value = '任务超时，渲染可能已中断'
-      progress.value = Math.max(progress.value, 95)
-      ElMessage.warning('任务执行超时，请检查 Celery Worker 或 Manim 是否正常运行')
-    }
-  }, 5 * 60 * 1000)
 }
 
 function stopSmoothProgress() {
   if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null }
-  if (_progressTimeout) { clearTimeout(_progressTimeout); _progressTimeout = null }
   _progressTarget = 0
 }
 
@@ -325,10 +313,7 @@ async function startAsyncTask(apiCall: () => Promise<any>) {
   try {
     const res = await apiCall()
     const taskId = res.data.data?.task_id
-    if (!taskId) {
-      if (res.data.message) requirementWarn.value = res.data.message
-      generating.value = false; stopSmoothProgress(); return
-    }
+    if (!taskId) { generating.value = false; return }
 
     _activeTaskId = taskId
     localStorage.setItem('cs:active-task', taskId)
@@ -397,9 +382,8 @@ onUnmounted(() => {
           <div class="quick-prompts">
             <span class="qp-label">快速模板：</span>
             <el-tag v-for="t in ['快速排序','Dijkstra算法','傅里叶变换','正态分布','二叉树遍历']" :key="t"
-              size="small" class="qp-tag" @click="requirement = t + '动画可视化'; requirementWarn = ''">{{ t }}</el-tag>
+              size="small" class="qp-tag" @click="requirement = t + '动画可视化'">{{ t }}</el-tag>
           </div>
-          <el-alert v-if="requirementWarn" :title="requirementWarn" type="warning" show-icon :closable="true" @close="requirementWarn = ''" style="margin-top:8px;" />
         </div>
       </div>
 

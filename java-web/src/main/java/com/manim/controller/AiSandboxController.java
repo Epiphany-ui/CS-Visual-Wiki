@@ -167,29 +167,4 @@ public class AiSandboxController {
         data.put("publishedWorkId", workId);
         return Result.success(data);
     }
-
-    @Operation(summary = "删除作品（仅创建者或管理员）")
-    @DeleteMapping("/work/{workId}")
-    public Result<Void> deleteWork(@PathVariable Integer workId) {
-        Work work = workService.getById(workId);
-        if (work == null) throw new BusinessException("作品不存在");
-
-        Integer userId = getCurrentUserId();
-        if (!work.getUserId().equals(userId) && !UserContext.isAdmin()) {
-            throw new BusinessException("无权删除此作品");
-        }
-
-        workService.deleteWork(workId);
-        return Result.success();
-    }
-
-    @Operation(summary = "根据视频路径删除作品（删除视频时同步清理）")
-    @DeleteMapping("/work/by-video-path")
-    public Result<Void> deleteWorkByVideoPath(@RequestParam("path") String videoPath) {
-        if (videoPath == null || videoPath.trim().isEmpty()) {
-            throw new BusinessException("视频路径不能为空");
-        }
-        workService.deleteByVideoPath(videoPath);
-        return Result.success();
-    }
 }

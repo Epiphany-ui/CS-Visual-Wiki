@@ -17,7 +17,6 @@ import chromadb
 import requests
 
 from services.logging_config import get_logger
-from services.progress_service import save_video_meta
 
 logger = get_logger("ai_engine")
 
@@ -78,18 +77,14 @@ def generate_video_poster(video_filename: str):
         poster_file = VIDEO_OUTPUT_SUBDIR / f"{Path(video_filename).stem}.jpg"
         if not video_file.exists() or poster_file.exists():
             return
-        result = subprocess.run(
+        subprocess.run(
             ["ffmpeg", "-y", "-i", str(video_file), "-ss", "2", "-vframes", "1",
              "-q:v", "3", str(poster_file)],
             capture_output=True, timeout=15,
             encoding="utf-8", errors="replace",
         )
-        if result.returncode != 0:
-            logger.warning("缩略图生成失败 (ffmpeg returncode=%d): %s", result.returncode, result.stderr[:200])
-    except FileNotFoundError:
-        logger.warning("缩略图生成失败：未找到 ffmpeg，请安装 ffmpeg 并加入 PATH")
-    except Exception as e:
-        logger.warning("缩略图生成异常: %s", str(e))
+    except Exception:
+        pass  # 缩略图生成失败不影响主流程
 RENDER_QUALITY_FLAG: str = os.getenv("RENDER_QUALITY_FLAG", "-qm")
 RENDER_TIMEOUT: int = int(os.getenv("RENDER_TIMEOUT", "120"))
 
@@ -163,15 +158,7 @@ def get_cached_result(user_input: str) -> Optional[Dict]:
     if cache_file.exists():
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
-                result = json.load(f)
-            # 缓存中的视频文件不存在时，视作缓存失效
-            video_path = result.get("video_path", "")
-            if video_path:
-                video_file = VIDEO_OUTPUT_SUBDIR / Path(video_path).name
-                if not video_file.exists():
-                    cache_file.unlink(missing_ok=True)
-                    return None
-            return result
+                return json.load(f)
         except Exception:
             return None
     return None
@@ -491,65 +478,6 @@ def fix_manim_code(original_code: str, error_message: str, context: str = None) 
     return True, fixed_code
 
 
-# ===================== 用户输入预检 =====================
-
-ANIMATION_KEYWORDS = {
-    # 中文
-    "排序", "搜索", "算法", "可视化", "动画", "遍历", "递归",
-    "二叉树", "链表", "栈", "队列", "图", "矩阵", "数组",
-    "哈希", "堆", "树", "查找", "冒泡", "快速排序", "归并",
-    "插入", "选择", "二分", "广度", "深度", "动态规划",
-    "神经网络", "机器学习", "傅里叶", "变换", "聚类",
-    "线性回归", "逻辑回归", "决策树", "随机森林", "梯度下降",
-    "最短路径", "最小生成树", "拓扑", "红黑树", "AVL",
-    "解密", "加密", "压缩", "编码", "解码", "协议",
-    "排序算法", "数据结构", "人脸识别", "图像处理",
-    # English
-    "sort", "search", "algorithm", "visualize", "animation",
-    "tree", "graph", "linked list", "stack", "queue", "array",
-    "hash", "heap", "binary", "recursive", "dynamic programming",
-    "neural network", "machine learning", "fourier", "transform",
-    "gradient descent", "pathfinding", "clustering", "regression",
-    "genetic", "ant colony", "simulated annealing",
-    "data structure", "sorting", "traversal", "depth-first",
-    "breadth-first", "dijkstra", "astar", "kruskal", "prim",
-    "classification", "pca", "svm", "k-means", "dbscan",
-}
-
-
-def validate_requirement(requirement: str) -> dict:
-    """预检用户需求是否与动画/可视化相关"""
-    if not requirement or not requirement.strip():
-        return {"valid": False, "suggestion": "请输入至少 3 个字符的描述"}
-    text = requirement.strip()
-    if len(text) < 3:
-        return {"valid": False, "suggestion": "请输入至少 3 个字符的描述"}
-    if len(text) > 1000:
-        return {"valid": False, "suggestion": "描述超过 1000 字符，请精简后重试"}
-
-    # 关键词检测
-    lower = text.lower()
-    hits = sum(1 for kw in ANIMATION_KEYWORDS if kw.lower() in lower)
-
-    if hits == 0:
-        return {
-            "valid": False,
-            "suggestion": (
-                "您的描述似乎与动画可视化无关，试试这样说：\n"
-                "  · 冒泡排序算法可视化\n"
-                "  · 二叉树的遍历动画\n"
-                "  · 快速排序过程演示"
-            ),
-        }
-    if hits == 1:
-        return {
-            "valid": True,
-            "warn": True,
-            "suggestion": "描述较模糊，建议更具体一些，例如「冒泡排序算法可视化」",
-        }
-    return {"valid": True, "warn": False, "suggestion": ""}
-
-
 def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIMES, progress_callback=None) -> Dict:
     result = {"success": False, "code": "", "video_path": "", "try_count": 0, "log": ""}
     current_code = ""
@@ -583,10 +511,6 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
 
         if render_success:
             result.update({"success": True, "video_path": video_path, "log": "\n".join(all_logs)})
-            # 保存视频标题到 Redis，供前端显示文字描述而非 UUID
-            fn = video_path.replace("/videos/", "") if video_path else ""
-            if fn:
-                save_video_meta(fn, title=user_requirement[:80])
             save_to_cache(user_requirement, result)
             return result
 
@@ -612,9 +536,6 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
 
             if render_success:
                 result.update({"success": True, "video_path": video_path, "log": "\n".join(all_logs)})
-                fn = video_path.replace("/videos/", "") if video_path else ""
-                if fn:
-                    save_video_meta(fn, title=user_requirement[:80])
                 save_to_cache(user_requirement, result)
                 return result
 

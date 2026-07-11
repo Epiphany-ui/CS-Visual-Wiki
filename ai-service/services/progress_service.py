@@ -8,7 +8,6 @@
 import json
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Optional, Dict, List
 
 import redis
@@ -30,92 +29,6 @@ def _get_redis() -> redis.Redis:
     if _redis_client is None:
         _redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     return _redis_client
-
-
-# ===================== 视频元数据持久化（JSON 文件，Redis 重启后恢复） =====================
-
-META_FILE = Path(__file__).resolve().parent.parent / "outputs" / "video_meta.json"
-USER_DATA_FILE = Path(__file__).resolve().parent.parent / "outputs" / "user_data.json"
-
-
-def _read_meta_file() -> dict:
-    """从 JSON 文件读取所有视频元数据"""
-    try:
-        if META_FILE.exists():
-            with open(META_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-
-def _write_meta_file(meta: dict):
-    """写入视频元数据到 JSON 文件"""
-    try:
-        META_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(META_FILE, "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
-def _restore_meta_to_redis():
-    """Redis 启动后，从 JSON 文件恢复所有标题到 Redis"""
-    meta = _read_meta_file()
-    if not meta:
-        return
-    try:
-        r = _get_redis()
-        for filename, data in meta.items():
-            key = f"{VIDEO_META_PREFIX}:{filename}"
-            r.hset(key, "title", data.get("title", filename))
-            r.hset(key, "created_at", data.get("created_at", ""))
-            r.hset(key, "username", data.get("username", "匿名"))
-            r.expire(key, 86400 * 30)
-    except Exception:
-        pass
-
-
-# ===================== 用户作品 & 画廊收藏持久化（JSON 文件） =====================
-
-
-def _read_user_data() -> dict:
-    """读取用户作品和画廊收藏数据"""
-    try:
-        if USER_DATA_FILE.exists():
-            with open(USER_DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {"user_works": {}, "gallery": []}
-
-
-def _write_user_data(data: dict):
-    """写入用户作品和画廊收藏数据到 JSON 文件"""
-    try:
-        USER_DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(USER_DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
-def _restore_user_data_to_redis():
-    """从 JSON 文件恢复用户作品和画廊收藏到 Redis"""
-    data = _read_user_data()
-    if not data:
-        return
-    try:
-        r = _get_redis()
-        for username, filenames in data.get("user_works", {}).items():
-            key = f"{VIDEO_META_PREFIX}:user-works:{username}"
-            for fn in filenames:
-                r.sadd(key, fn)
-            r.expire(key, 86400 * 90)
-        for fn in data.get("gallery", []):
-            r.sadd(GALLERY_KEY, fn)
-    except Exception:
-        pass
 
 
 # ===================== 任务进度管理 =====================
@@ -225,14 +138,12 @@ def list_videos() -> list:
 
 
 def delete_video(filename: str) -> bool:
-    """删除指定视频文件、代码文件、缩略图及 Redis 元数据"""
+    """删除指定视频文件及对应的代码文件"""
     from pathlib import Path
 
     base = Path(__file__).resolve().parent.parent / "outputs"
     video_path = base / "videos" / filename
-    stem = Path(filename).stem
-    code_path = base / "code" / f"{stem}.py"
-    thumb_path = base / "videos" / f"{stem}.jpg"
+    code_path = base / "code" / f"{Path(filename).stem}.py"
 
     deleted = False
     if video_path.exists():
@@ -241,73 +152,7 @@ def delete_video(filename: str) -> bool:
     if code_path.exists():
         code_path.unlink()
         deleted = True
-    if thumb_path.exists():
-        thumb_path.unlink()
-
-    # 清理 Redis 元数据
-    try:
-        r = _get_redis()
-        r.delete(f"{VIDEO_META_PREFIX}:{filename}")
-        r.srem(GALLERY_KEY, filename)
-    except Exception:
-        pass
-
-    # 清理 JSON 文件中的元数据
-    try:
-        meta = _read_meta_file()
-        if filename in meta:
-            del meta[filename]
-            _write_meta_file(meta)
-    except Exception:
-        pass
-
-    # 清理用户作品 JSON 文件中的引用
-    try:
-        data = _read_user_data()
-        changed = False
-        for username in list(data.get("user_works", {}).keys()):
-            if filename in data["user_works"][username]:
-                data["user_works"][username].remove(filename)
-                changed = True
-        if filename in data.get("gallery", []):
-            data["gallery"].remove(filename)
-            changed = True
-        if changed:
-            _write_user_data(data)
-    except Exception:
-        pass
-
-    # 清理 cache 目录中关联的缓存文件（MD5 哈希文件，key 为用户输入文本）
-    try:
-        cache_dir = Path(__file__).resolve().parent.parent / "cache"
-        if cache_dir.exists():
-            stem = Path(filename).stem
-            for cache_file in cache_dir.glob("*.json"):
-                try:
-                    data = json.loads(cache_file.read_text(encoding="utf-8"))
-                    if data.get("video_path", "").endswith(f"/{stem}.mp4"):
-                        cache_file.unlink()
-                except Exception:
-                    continue
-    except Exception:
-        pass
-
     return deleted
-
-
-# ===================== 保存视频元数据时同步用户作品到 JSON =====================
-
-def _sync_user_works_to_file(username: str, filename: str):
-    """将视频加入用户作品的 JSON 文件记录"""
-    try:
-        data = _read_user_data()
-        if username not in data["user_works"]:
-            data["user_works"][username] = []
-        if filename not in data["user_works"][username]:
-            data["user_works"][username].append(filename)
-        _write_user_data(data)
-    except Exception:
-        pass
 
 
 # ===================== 视频元数据管理 =====================
@@ -316,75 +161,42 @@ VIDEO_META_PREFIX = "cs:video"  # Redis Hash: 视频元数据 {filename} → {ti
 
 
 def save_video_meta(filename: str, title: str = "", username: str = ""):
-    """保存视频元数据（标题、创建时间、发布者）——同时写入 Redis 和 JSON 文件"""
+    """保存视频元数据（标题、创建时间、发布者）"""
     try:
         r = _get_redis()
         key = f"{VIDEO_META_PREFIX}:{filename}"
         r.hset(key, "title", title or filename)
         r.hset(key, "created_at", datetime.now().isoformat())
         r.hset(key, "username", username or "匿名")
-        r.expire(key, 86400 * 30)
+        r.expire(key, 86400 * 30)  # 30 天过期
+        # 同步加入用户作品列表（服务端持久化）
         if username and username != "匿名":
             r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
             r.expire(f"{VIDEO_META_PREFIX}:user-works:{username}", 86400 * 90)
+        _maybe_bgsave()
     except Exception:
         pass
-
-    # 同步写入 JSON 文件（持久化，Redis 重启后恢复）
-    try:
-        meta = _read_meta_file()
-        meta[filename] = {
-            "title": title or filename,
-            "created_at": datetime.now().isoformat(),
-            "username": username or "匿名",
-        }
-        _write_meta_file(meta)
-    except Exception:
-        pass
-
-    # 同步用户作品到 user_data.json
-    if username:
-        try:
-            _sync_user_works_to_file(username, filename)
-        except Exception:
-            pass
 
 
 def add_to_user_works(username: str, filename: str) -> bool:
-    """将视频加入用户的作品列表——同时写入 Redis 和 JSON 文件"""
+    """将视频加入用户的作品列表（服务端持久化，跨浏览器/设备同步）"""
     try:
         r = _get_redis()
         r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
         r.expire(f"{VIDEO_META_PREFIX}:user-works:{username}", 86400 * 90)
-    except Exception:
-        pass
-
-    # 同步写入 JSON 文件
-    try:
-        data = _read_user_data()
-        if username not in data["user_works"]:
-            data["user_works"][username] = []
-        if filename not in data["user_works"][username]:
-            data["user_works"][username].append(filename)
-        _write_user_data(data)
+        _maybe_bgsave()
         return True
     except Exception:
         return False
 
 
 def get_user_works(username: str) -> set:
-    """获取用户的作品文件名列表——优先 Redis，回退 JSON 文件"""
+    """获取用户的作品文件名列表"""
     try:
         r = _get_redis()
-        result = r.smembers(f"{VIDEO_META_PREFIX}:user-works:{username}") or set()
-        if result:
-            return result
+        return r.smembers(f"{VIDEO_META_PREFIX}:user-works:{username}") or set()
     except Exception:
-        pass
-
-    # Redis 无数据时从 JSON 文件恢复
-    data = _read_user_data()
-    return set(data.get("user_works", {}).get(username, []))
+        return set()
 
 
 def get_video_meta(filename: str) -> dict:
@@ -398,7 +210,7 @@ def get_video_meta(filename: str) -> dict:
 
 
 def get_all_video_metas() -> dict:
-    """批量获取所有视频元数据——优先 Redis，回退到 JSON 文件"""
+    """批量获取所有视频元数据（{filename: {title, ...}}）"""
     try:
         r = _get_redis()
         result = {}
@@ -407,53 +219,35 @@ def get_all_video_metas() -> dict:
             cursor, keys = r.scan(cursor, match=f"{VIDEO_META_PREFIX}:*", count=200)
             for key in keys:
                 ks = key.decode("utf-8") if isinstance(key, bytes) else key
+                # 跳过 user-works Set 键（它们不是 Hash，hgetall 会抛 WRONGTYPE）
                 if ":user-works:" in ks:
                     continue
                 fname = ks.replace(f"{VIDEO_META_PREFIX}:", "")
                 try:
                     result[fname] = r.hgetall(key) or {}
                 except Exception:
-                    continue
+                    continue  # 跳过类型不匹配的键
             if cursor == 0:
                 break
-        if result:
-            return result
+        return result
     except Exception:
-        pass
-
-    # Redis 无数据时从 JSON 文件恢复
-    file_meta = _read_meta_file()
-    if file_meta:
-        # 异步恢复到 Redis（不阻塞）
-        try:
-            _restore_meta_to_redis()
-        except Exception:
-            pass
-    return file_meta
+        return {}
 
 
 def update_video_title(filename: str, new_title: str) -> bool:
-    """修改视频标题——同时更新 Redis 和 JSON 文件"""
+    """修改视频标题"""
     try:
         r = _get_redis()
         key = f"{VIDEO_META_PREFIX}:{filename}"
         if r.exists(key):
             r.hset(key, "title", new_title)
         else:
+            # 如果元数据不存在，创建
             save_video_meta(filename, title=new_title)
+        _maybe_bgsave()
+        return True
     except Exception:
-        pass
-
-    # 同步更新 JSON 文件
-    try:
-        meta = _read_meta_file()
-        if filename in meta:
-            meta[filename]["title"] = new_title
-            _write_meta_file(meta)
-    except Exception:
-        pass
-
-    return True
+        return False
 
 
 # ===================== 画廊收藏管理 =====================
@@ -475,35 +269,21 @@ def _maybe_bgsave():
 
 def save_to_gallery(filename: str) -> bool:
     """
-    Toggle 收藏状态——同时更新 Redis 和 JSON 文件
+    Toggle 收藏状态：已收藏则取消，未收藏则添加。
     返回操作后的状态 (True=已收藏, False=已取消)。
     """
-    saved = False
     try:
         r = _get_redis()
         if r.sismember(GALLERY_KEY, filename):
             r.srem(GALLERY_KEY, filename)
-            saved = False
+            _maybe_bgsave()
+            return False
         else:
             r.sadd(GALLERY_KEY, filename)
-            saved = True
+            _maybe_bgsave()
+            return True
     except Exception:
-        pass
-
-    # 同步更新 JSON 文件
-    try:
-        data = _read_user_data()
-        if saved:
-            if filename not in data["gallery"]:
-                data["gallery"].append(filename)
-        else:
-            if filename in data["gallery"]:
-                data["gallery"].remove(filename)
-        _write_user_data(data)
-    except Exception:
-        pass
-
-    return saved
+        return False
 
 
 def is_in_gallery(filename: str) -> bool:
@@ -516,18 +296,12 @@ def is_in_gallery(filename: str) -> bool:
 
 
 def get_gallery_filenames() -> set:
-    """获取所有已收藏的视频文件名——优先 Redis，回退 JSON 文件"""
+    """获取所有已收藏的视频文件名"""
     try:
         r = _get_redis()
-        result = r.smembers(GALLERY_KEY) or set()
-        if result:
-            return result
+        return r.smembers(GALLERY_KEY) or set()
     except Exception:
-        pass
-
-    # Redis 无数据时从 JSON 文件恢复
-    data = _read_user_data()
-    return set(data.get("gallery", []))
+        return set()
 
 
 # ===================== v1.0 任务队列管理 =====================

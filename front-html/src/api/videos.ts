@@ -64,11 +64,6 @@ export const videosApi = {
   deleteVideo(filename: string) {
     return pythonClient.delete(`/api/videos/${filename}`)
   },
-
-  /** 读取生成视频时使用的 Manim 代码 */
-  getCode(filename: string) {
-    return pythonClient.get<ApiResponse<{ code: string; filename: string }>>(`/api/videos/${filename}/code`)
-  },
 }
 
 export const debugApi = {
