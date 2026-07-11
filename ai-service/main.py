@@ -784,7 +784,7 @@ async def api_videos_list(gallery: bool = False, my_works: bool = False, usernam
         v["username"] = (meta.get("username") or b"").decode("utf-8") if isinstance(meta.get("username"), bytes) else (meta.get("username") or "匿名")
         v["created_by"] = v.get("username", "匿名")
     if gallery:
-        saved = get_gallery_filenames()
+        saved = get_gallery_filenames(username)
         videos = [v for v in videos if v.get("filename") in saved]
     if my_works and username:
         works = get_user_works(username)
@@ -801,7 +801,7 @@ async def api_videos_save(filename: str, username: str = ""):
     """
     if not _is_safe_filename(filename):
         return error_response("非法文件名")
-    saved = save_to_gallery(filename)
+    saved = save_to_gallery(filename, username)
     # 同步到用户作品列表
     if saved and username:
         add_to_user_works(username, filename)

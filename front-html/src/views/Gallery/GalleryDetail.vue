@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { videosApi } from '@/api/videos'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,7 +39,8 @@ async function handleRename() {
 
 async function checkSaved() {
   try {
-    const res = await videosApi.getList(true)
+    const uname = localStorage.getItem('username') || ''
+    const res = await videosApi.getList(true, uname)
     const items: { filename: string }[] = res.data.data?.items || []
     saved.value = items.some((v) => v.filename === filename)
   } catch { /* ignore */ }
@@ -47,7 +48,7 @@ async function checkSaved() {
 
 async function handleSave() {
   try {
-    const res = await videosApi.saveVideo(filename)
+    const res = await videosApi.saveVideo(filename, localStorage.getItem('username') || '')
     saved.value = res.data.data?.saved ?? false
     ElMessage.success(saved.value ? '已收藏' : '已取消收藏')
   } catch {
@@ -66,6 +67,22 @@ async function handleConvertGif() {
     }
   } catch { /* handled */ }
   finally { converting.value = false }
+}
+
+const deleting = ref(false)
+async function handleDelete() {
+  try {
+    await ElMessageBox.confirm('确定要删除该视频吗？此操作不可恢复。', '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+  } catch { return }
+  deleting.value = true
+  try {
+    await videosApi.deleteVideo(filename)
+    ElMessage.success('已删除')
+    router.push('/gallery')
+  } catch { ElMessage.error('删除失败') }
+  finally { deleting.value = false }
 }
 
 onMounted(() => { checkSaved(); loadTitle() })
@@ -98,6 +115,9 @@ onMounted(() => { checkSaved(); loadTitle() })
       <el-button round :loading="converting" @click="handleConvertGif"><el-icon><PictureFilled /></el-icon> 转为 GIF</el-button>
       <el-button round :type="saved ? 'warning' : 'default'" @click="handleSave">
         <el-icon><StarFilled v-if="saved" /><Star v-else /></el-icon> {{ saved ? '已收藏' : '收藏' }}
+      </el-button>
+      <el-button round type="danger" :loading="deleting" @click="handleDelete">
+        <el-icon><Delete /></el-icon> 删除
       </el-button>
     </div>
 

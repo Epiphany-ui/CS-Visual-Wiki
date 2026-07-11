@@ -50,7 +50,7 @@ async function loadAll() {
 
 async function loadStars() {
   try {
-    const res = await videosApi.getList(true)  // starred only
+    const res = await videosApi.getList(true, localStorage.getItem('username') || '')  // starred only
     starredVideos.value = res.data.data?.items || []
   } catch { /* ignore */ }
 }

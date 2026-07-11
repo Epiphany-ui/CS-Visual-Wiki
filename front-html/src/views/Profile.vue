@@ -114,7 +114,7 @@ async function syncExistingProfileToBackend() {
 
 async function loadStarsCount() {
   try {
-    const res = await videosApi.getList(true)
+    const res = await videosApi.getList(true, userStore.username)
     myStarsCount.value = res.data.data?.total || 0
   } catch { /* ignore */ }
 }

@@ -138,20 +138,38 @@ def list_videos() -> list:
 
 
 def delete_video(filename: str) -> bool:
-    """删除指定视频文件及对应的代码文件"""
+    """删除指定视频文件、代码文件、缩略图，并清理 Redis 相关数据"""
     from pathlib import Path
 
     base = Path(__file__).resolve().parent.parent / "outputs"
     video_path = base / "videos" / filename
     code_path = base / "code" / f"{Path(filename).stem}.py"
+    poster_path = base / "videos" / f"{Path(filename).stem}.jpg"
 
+    # 1) 删除磁盘文件
     deleted = False
-    if video_path.exists():
-        video_path.unlink()
-        deleted = True
-    if code_path.exists():
-        code_path.unlink()
-        deleted = True
+    for p in (video_path, code_path, poster_path):
+        if p.exists():
+            p.unlink()
+            deleted = True
+
+    # 2) 清理 Redis：画廊收藏 + 用户作品 + 元数据
+    try:
+        r = _get_redis()
+        r.srem(GALLERY_KEY, filename)
+        # 从所有用户的 user-works 中删除
+        meta_key = f"{VIDEO_META_PREFIX}:{filename}"
+        meta = r.hgetall(meta_key) or {}
+        username = meta.get("username", "")
+        if isinstance(username, bytes):
+            username = username.decode("utf-8")
+        if username and username != "匿名":
+            r.srem(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
+        r.delete(meta_key)
+        _maybe_bgsave()
+    except Exception:
+        pass
+
     return deleted
 
 
@@ -252,7 +270,11 @@ def update_video_title(filename: str, new_title: str) -> bool:
 
 # ===================== 画廊收藏管理 =====================
 
-GALLERY_KEY = "cs:gallery"  # Redis Set: 已收藏的视频文件名
+GALLERY_KEY = "cs:gallery"  # Redis Set: 已收藏的视频文件名（全局，向后兼容）
+
+def _gallery_key(username: str = "") -> str:
+    """per-user 画廊 key，未登录用户回退到全局 key"""
+    return f"cs:gallery:{username}" if username else GALLERY_KEY
 
 
 def _maybe_bgsave():
@@ -267,39 +289,41 @@ def _maybe_bgsave():
         pass
 
 
-def save_to_gallery(filename: str) -> bool:
+def save_to_gallery(filename: str, username: str = "") -> bool:
     """
     Toggle 收藏状态：已收藏则取消，未收藏则添加。
+    username 为空时使用全局 key（向后兼容）。
     返回操作后的状态 (True=已收藏, False=已取消)。
     """
     try:
         r = _get_redis()
-        if r.sismember(GALLERY_KEY, filename):
-            r.srem(GALLERY_KEY, filename)
+        key = _gallery_key(username)
+        if r.sismember(key, filename):
+            r.srem(key, filename)
             _maybe_bgsave()
             return False
         else:
-            r.sadd(GALLERY_KEY, filename)
+            r.sadd(key, filename)
             _maybe_bgsave()
             return True
     except Exception:
         return False
 
 
-def is_in_gallery(filename: str) -> bool:
+def is_in_gallery(filename: str, username: str = "") -> bool:
     """检查视频是否已收藏"""
     try:
         r = _get_redis()
-        return bool(r.sismember(GALLERY_KEY, filename))
+        return bool(r.sismember(_gallery_key(username), filename))
     except Exception:
         return False
 
 
-def get_gallery_filenames() -> set:
-    """获取所有已收藏的视频文件名"""
+def get_gallery_filenames(username: str = "") -> set:
+    """获取用户已收藏的视频文件名"""
     try:
         r = _get_redis()
-        return r.smembers(GALLERY_KEY) or set()
+        return r.smembers(_gallery_key(username)) or set()
     except Exception:
         return set()
 

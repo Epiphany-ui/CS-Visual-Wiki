@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { generationApi } from '@/api/generation'
 import { videosApi } from '@/api/videos'
@@ -28,6 +28,7 @@ const savedToGallery = ref(false)
 const currentFilename = ref('')
 const publishDialogVisible = ref(false)
 const publishDesc = ref('')
+const publishToGallery = ref(true)
 const renderQuality = ref(localStorage.getItem('cs:render-quality') || '-qm')
 let _activeTaskId = ''
 let _aiChanging = false   // 标记正在由 AI 修改代码（触发 typewriter）
@@ -48,8 +49,11 @@ watch(code, (newVal, oldVal) => {
   }
 })
 
-// ========== 状态持久化：离开再回来界面不变 ==========
-const STATE_KEY = 'cs:sandbox-state'
+// ========== 状态持久化：离开再回来界面不变（按用户隔离） ==========
+const STATE_KEY = computed(() => {
+  const u = localStorage.getItem('username') || 'anon'
+  return `cs:sandbox-state:${u}`
+})
 
 function saveState() {
   try {
@@ -65,13 +69,13 @@ function saveState() {
       progressMsg: progressMsg.value,
       activeTaskId: _activeTaskId,
     }
-    sessionStorage.setItem(STATE_KEY, JSON.stringify(state))
+    sessionStorage.setItem(STATE_KEY.value, JSON.stringify(state))
   } catch { /* ignore */ }
 }
 
 function restoreState() {
   try {
-    const raw = sessionStorage.getItem(STATE_KEY)
+    const raw = sessionStorage.getItem(STATE_KEY.value)
     if (!raw) return
     const state = JSON.parse(raw)
     requirement.value = state.requirement || ''
@@ -158,7 +162,7 @@ function restoreTaskFromSession() {
   // 从 sessionStorage 恢复进度（比 Pinia store 更准确）
   let savedProgress = 0
   try {
-    const raw = sessionStorage.getItem(STATE_KEY)
+    const raw = sessionStorage.getItem(STATE_KEY.value)
     if (raw) {
       const state = JSON.parse(raw)
       savedProgress = state.progress || 0
@@ -264,6 +268,7 @@ async function handleFixCode() {
 
 function openPublishDialog() {
   publishDesc.value = requirement.value.slice(0, 200)
+  publishToGallery.value = true
   publishDialogVisible.value = true
 }
 
@@ -291,6 +296,12 @@ async function handlePublish() {
     const data = await res.json()
     if (data.code === 200) {
       publishDialogVisible.value = false
+      // 如果勾选了发布到画廊，同步收藏
+      if (publishToGallery.value && currentFilename.value) {
+        videosApi.saveVideo(currentFilename.value, localStorage.getItem('username') || '').then(() => {
+          savedToGallery.value = true
+        }).catch(() => {})
+      }
       ElMessage.success('已发布到社区！')
     } else {
       ElMessage.error(data.msg || '发布失败')
@@ -301,7 +312,7 @@ async function handlePublish() {
 async function handleSaveToGallery() {
   if (!currentFilename.value) return
   try {
-    const res = await videosApi.saveVideo(currentFilename.value)
+    const res = await videosApi.saveVideo(currentFilename.value, localStorage.getItem('username') || '')
     savedToGallery.value = res.data.data?.saved ?? false
     ElMessage.success(savedToGallery.value ? '已收藏' : '已取消收藏')
   } catch { ElMessage.error('操作失败') }
@@ -462,6 +473,7 @@ onUnmounted(() => {
     <!-- 发布到社区弹窗 -->
     <el-dialog v-model="publishDialogVisible" title="发布到社区" width="480px">
       <el-input v-model="publishDesc" type="textarea" :rows="4" placeholder="写一段描述介绍你的作品..." />
+      <el-checkbox v-model="publishToGallery" style="margin-top:12px">同时发布到画廊</el-checkbox>
       <template #footer>
         <el-button @click="publishDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handlePublish">发布</el-button>

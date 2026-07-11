@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/common/PageHeader.vue'
 import AvatarIcon from '@/components/common/AvatarIcon.vue'
 import { videosApi } from '@/api/videos'
@@ -8,12 +9,37 @@ import { communityApi, type Comment } from '@/api/community'
 
 const router = useRouter()
 const posts = ref<any[]>([])
+const deletingPost = ref<Set<number>>(new Set())
+
+async function handleDeletePost(post: any) {
+  try {
+    await ElMessageBox.confirm('确定要删除该作品吗？此操作不可恢复。', '删除确认', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+  } catch { return }
+  deletingPost.value.add(post.id)
+  try {
+    const token = localStorage.getItem('token')
+    const res = await fetch(`/api/v1/work/${post.id}`, {
+      method: 'DELETE',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+    if (res.ok) {
+      posts.value = posts.value.filter(p => p.id !== post.id)
+      ElMessage.success('删除成功')
+    } else {
+      ElMessage.error('删除失败')
+    }
+  } catch { ElMessage.error('删除失败，请检查网络') }
+  finally { deletingPost.value.delete(post.id) }
+}
 const loading = ref(true)
 const sortBy = ref<'time' | 'likes' | 'views'>('time')
 const showVideo = ref<number | null>(null)
 const expandedComments = ref<Set<number>>(new Set())
 const commentInputs = reactive<Record<number, string>>({})
 const currentUser = ref(localStorage.getItem('username') || '')
+const currentDisplayName = ref(localStorage.getItem(`cs:nickname:${currentUser.value}`) || '')
 const currentAvatar = ref(localStorage.getItem(`cs:avatar:${currentUser.value}`) || '')
 
 function getThumbnailUrl(post: any): string {
@@ -110,7 +136,7 @@ async function submitComment(postId: number) {
   const text = commentInputs[postId]?.trim()
   if (!text || !currentUser.value) return
   try {
-    await communityApi.addComment(postId, currentUser.value, text, currentAvatar.value)
+    await communityApi.addComment(postId, currentDisplayName.value || currentUser.value, text, currentAvatar.value)
     commentInputs[postId] = ''
     loadComments(postId)
   } catch { /* ignore */ }
@@ -141,7 +167,7 @@ async function preloadTopComments() {
 function getCommentAvatar(comment: any, post: any): string {
   if (comment.avatar) return comment.avatar
   // 如果是当前用户，用 localStorage 头像
-  if (comment.username === currentUser.value) return currentAvatar.value
+  if (comment.username === currentUser.value || comment.username === currentDisplayName.value) return currentAvatar.value
   // 如果是帖子作者，用帖子的头像
   if (comment.username === post.authorName) return post.authorAvatar || ''
   // 从已有评论中查找同用户名有头像的
@@ -186,6 +212,9 @@ onMounted(async () => { await loadPosts(); preloadTopComments() })
             <span class="post-author-name" @click="router.push(`/user/${encodeURIComponent(post.authorName || '匿名用户')}`)">{{ post.authorName }}</span>
             <span class="post-time">{{ formatTime(post.time) }}</span>
           </div>
+          <button v-if="post.authorName === currentUser" class="post-del-btn" :disabled="deletingPost.has(post.id)" @click.stop="handleDeletePost(post)" title="删除作品">
+            <el-icon :size="14"><Delete /></el-icon>
+          </button>
         </div>
 
         <!-- 文字内容 -->
@@ -312,6 +341,12 @@ onMounted(async () => { await loadPosts(); preloadTopComments() })
 }
 .post-author-name:hover { color: var(--accent-purple-light); }
 .post-time { font-size: 0.75rem; color: var(--text-tertiary); letter-spacing: 0.02em; }
+.post-del-btn {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: var(--text-tertiary); padding: 4px 8px; border-radius: 8px;
+  transition: all 0.15s; font-size: 1rem; line-height: 1;
+}
+.post-del-btn:hover { color: #e74c3c; background: rgba(231,76,60,0.08); }
 
 /* ---- 正文 ---- */
 .post-body { margin-bottom: 20px; }

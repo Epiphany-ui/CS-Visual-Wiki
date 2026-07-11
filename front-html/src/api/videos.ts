@@ -6,15 +6,17 @@ const VIDEO_BASE = 'http://localhost:8000'
 
 export const videosApi = {
   /** 获取视频列表。?gallery=true 时仅返回已收藏到画廊的视频 */
-  getList(gallery = false) {
+  getList(gallery = false, username = '') {
     const params: Record<string, any> = { _: Date.now() }
-    if (gallery) params.gallery = true
+    if (gallery) { params.gallery = true; if (username) params.username = username }
     return pythonClient.get<ApiResponse<{ items: VideoFile[]; total: number }>>('/api/videos/list', { params })
   },
 
   /** Toggle 画廊收藏：已收藏则取消，未收藏则添加 */
-  saveVideo(filename: string) {
-    return pythonClient.post<ApiResponse<{ filename: string; saved: boolean }>>(`/api/videos/${filename}/save`)
+  saveVideo(filename: string, username = '') {
+    const params: Record<string, any> = {}
+    if (username) params.username = username
+    return pythonClient.post<ApiResponse<{ filename: string; saved: boolean }>>(`/api/videos/${filename}/save`, null, { params })
   },
 
   /** 下载视频 */

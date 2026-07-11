@@ -5,6 +5,7 @@ import com.manim.dto.CarouselDTO;
 import com.manim.dto.WorkListDTO;
 import com.manim.mapper.*;
 import com.manim.pojo.*;
+import com.manim.exception.BusinessException;
 import com.manim.service.WorkService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -238,5 +239,32 @@ public class WorkServiceImpl implements WorkService {
         sandboxDraftMapper.insert(draft);
 
         return fork.getId();
+    }
+
+    @Override
+    public void deleteWork(Integer workId, Integer userId) {
+        Work work = workMapper.selectById(workId);
+        if (work == null) throw new BusinessException("作品不存在");
+        if (!work.getUserId().equals(userId)) throw new BusinessException("无权删除他人作品");
+        workMapper.deleteById(workId);
+    }
+
+    @Override
+    public void toggleVisibility(Integer workId, Integer userId) {
+        Work work = workMapper.selectById(workId);
+        if (work == null) throw new BusinessException("作品不存在");
+        if (!work.getUserId().equals(userId)) throw new BusinessException("无权操作他人作品");
+        work.setIsPublic(work.getIsPublic() == 1 ? 0 : 1);
+        workMapper.updateById(work);
+    }
+
+    @Override
+    public void updateWorkFields(Integer workId, Integer userId, String title, String description) {
+        Work work = workMapper.selectById(workId);
+        if (work == null) throw new BusinessException("作品不存在");
+        if (!work.getUserId().equals(userId)) throw new BusinessException("无权修改他人作品");
+        if (title != null && !title.trim().isEmpty()) work.setTitle(title.trim());
+        if (description != null) work.setDescription(description.trim());
+        workMapper.updateById(work);
     }
 }
