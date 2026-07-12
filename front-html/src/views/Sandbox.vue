@@ -28,7 +28,7 @@ const savedToGallery = ref(false)
 const currentFilename = ref('')
 const publishDialogVisible = ref(false)
 const publishDesc = ref('')
-const publishToGallery = ref(true)
+const publishToGallery = ref(false)
 const renderQuality = ref(localStorage.getItem('cs:render-quality') || '-qm')
 let _activeTaskId = ''
 let _aiChanging = false   // 标记正在由 AI 修改代码（触发 typewriter）
@@ -252,18 +252,17 @@ async function handleCancelTask() {
 async function handleFixCode() {
   if (!code.value.trim()) return
   const err = getLastError()
-  if (!err.trim()) { ElMessage.warning('请先渲染代码获取错误信息，或先点「渲染」试试'); return }
   fixing.value = true
   try {
-    // 把原始需求也传给 AI，帮助 AI 理解用户意图后修复
-    const res = await generationApi.fixCode(code.value, err, requirement.value || undefined)
+    // 把错误信息和原始需求都传给 AI（无错误时仅传需求，AI 也能优化代码）
+    const res = await generationApi.fixCode(code.value, err || '请根据用户需求优化代码', requirement.value || undefined)
     const fixed = res.data.data?.code
     if (fixed && fixed !== code.value) {
       _aiChanging = true
       code.value = fixed
-      ElMessage.success('AI 已根据错误信息和原始需求修复代码，请重新渲染验证')
+      ElMessage.success(err.trim() ? 'AI 已根据错误信息修复代码' : 'AI 已根据需求优化代码，请渲染验证')
     } else {
-      ElMessage.info('AI 未找到需要修改的地方，代码可能已正确')
+      ElMessage.info('AI 未找到需要修改的地方')
     }
   } catch { ElMessage.error('修复失败，请重试') }
   finally { fixing.value = false }
@@ -277,7 +276,7 @@ function openPublishDialog() {
 
 async function handlePublish() {
   // 从完整代码中提取场景类名作为智能标题（不截断，避免类名被切碎）
-  const classMatch = code.value.match(/class\s+(\w+)\s*\(/)
+  const classMatch = code.value.match(/class\s+(\w+)\s*\(\s*\w*Scene/)
   const title = classMatch?.[1] || requirement.value.slice(0, 40) || '未命名作品'
   const token = localStorage.getItem('token')
   if (!token) { ElMessage.warning('请先登录再发布'); return }
@@ -363,6 +362,14 @@ async function startAsyncTask(apiCall: () => Promise<any>) {
 }
 
 onMounted(() => {
+  // Fork 过来的代码
+  const forkedCode = sessionStorage.getItem('cs:forked-code')
+  if (forkedCode) {
+    code.value = forkedCode
+    sessionStorage.removeItem('cs:forked-code')
+    return
+  }
+
   const prompt = route.query.prompt as string
   if (prompt) {
     // 从百科/首页跳转过来 → 全新任务，自动开始生成

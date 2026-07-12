@@ -138,7 +138,11 @@ async def startup_event():
         r.config_set("dir", _project_dir)
         r.config_set("stop-writes-on-bgsave-error", "no")
         r.config_set("save", "")  # Windows 上禁用自动 BGSAVE（fork 会断连 Celery），改为手动触发
-        logger.info("[startup] Redis 配置已自动修复 (dir=%s)", _project_dir)
+        try:
+            r.config_rewrite()  # 持久化到 redis.conf，重启后生效
+        except Exception:
+            pass
+        logger.info("[startup] Redis 配置已自动修复并持久化 (dir=%s)", _project_dir)
     except Exception as _e:
         logger.warning("[startup] 无法自动配置 Redis: %s（如 Redis 未安装请忽略）", _e)
 

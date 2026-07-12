@@ -205,7 +205,7 @@ onMounted(() => {
 
     <div class="profile-grid">
       <RevealOnScroll v-for="(card, i) in [
-        { icon: 'PictureFilled', color: 'var(--accent-purple)', label: '我的作品', count: serverWorksCount.value, click: () => router.push('/gallery?tab=my-works') },
+        { icon: 'PictureFilled', color: 'var(--accent-purple)', label: '我的作品', count: serverWorksCount.value || myWorksCount, click: () => router.push('/gallery?tab=my-works') },
         { icon: 'Star', color: 'var(--accent-orange)', label: '我的收藏', count: myStarsCount, click: () => router.push('/gallery?tab=stars') },
         { icon: 'Collection', color: 'var(--accent-cyan)', label: '词条贡献', count: 0, click: () => router.push('/wiki') },
         { icon: 'Clock', color: 'var(--accent-green)', label: '模板贡献', count: 0, click: () => router.push('/templates') },

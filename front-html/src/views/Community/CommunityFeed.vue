@@ -10,6 +10,28 @@ import { communityApi, type Comment } from '@/api/community'
 const router = useRouter()
 const posts = ref<any[]>([])
 const deletingPost = ref<Set<number>>(new Set())
+const forkingPost = ref<Set<number>>(new Set())
+
+async function handleFork(post: any) {
+  const token = localStorage.getItem('token')
+  if (!token) { ElMessage.warning('请先登录'); return }
+  forkingPost.value.add(post.id)
+  try {
+    const res = await fetch(`/api/v1/work/fork?workId=${post.id}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+    const data = await res.json()
+    if (data.code === 200 && data.data?.sourceCode) {
+      sessionStorage.setItem('cs:forked-code', data.data.sourceCode)
+      router.push('/sandbox?fork=1')
+      ElMessage.success('已 Fork 到沙箱')
+    } else {
+      ElMessage.error(data.msg || 'Fork 失败')
+    }
+  } catch { ElMessage.error('Fork 失败') }
+  finally { forkingPost.value.delete(post.id) }
+}
 
 async function handleDeletePost(post: any) {
   try {
@@ -247,8 +269,8 @@ onMounted(async () => { await loadPosts(); preloadTopComments() })
           <span class="post-action" @click="toggleComments(post.id)">
             💬 {{ post._commentTotal || '' }}
           </span>
-          <span class="post-action">
-            🔗 Fork
+          <span class="post-action" @click="handleFork(post)">
+            {{ forkingPost.has(post.id) ? '⏳' : '🔗' }} Fork
           </span>
           <span class="post-action">
             👁 {{ post._views }}

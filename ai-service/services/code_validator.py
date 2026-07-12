@@ -49,14 +49,14 @@ def validate_code(code: str) -> Tuple[bool, List[Dict]]:
             "suggestion": "请在代码开头添加 'from manim import *'",
         })
 
-    # 3. Scene 类检测
+    # 3. Scene 类检测（支持所有 Scene 子类：ThreeDScene, MovingCameraScene 等）
     has_scene_class = False
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
             for base in node.bases:
-                if isinstance(base, ast.Name) and base.id == "Scene":
+                if isinstance(base, ast.Name) and base.id.endswith("Scene"):
                     has_scene_class = True
-                elif isinstance(base, ast.Attribute) and base.attr == "Scene":
+                elif isinstance(base, ast.Attribute) and base.attr.endswith("Scene"):
                     has_scene_class = True
 
     if not has_scene_class:

@@ -89,7 +89,7 @@ RENDER_QUALITY_FLAG: str = os.getenv("RENDER_QUALITY_FLAG", "-qm")
 RENDER_TIMEOUT: int = int(os.getenv("RENDER_TIMEOUT", "120"))
 
 CODE_BLOCK_PATTERN: str = r"```python\s*(.*?)\s*```|```\s*(.*?)\s*```"
-SCENE_CLASS_PATTERN: str = r"class\s+(\w+)\s*\(\s*Scene\s*\)"
+SCENE_CLASS_PATTERN: str = r"class\s+(\w+)\s*\(\s*\w*Scene\s*\w*\)"
 
 # 延迟导入 Prompt 服务，避免循环依赖和启动顺序问题
 _prompt_service = None
@@ -447,15 +447,22 @@ def render_manim_animation(code_str: str, progress_callback=None, quality: str =
 
         if process.returncode == 0 and video_output_path.exists():
             web_accessible_url = f"/videos/{task_id}.mp4"
-            # 渲染成功后自动生成缩略图（静默失败不影响主流程）
             generate_video_poster(f"{task_id}.mp4")
             if progress_callback:
                 progress_callback("success", web_accessible_url)
             return True, f"✅ 渲染成功\n{full_log}", web_accessible_url
         else:
+            # 常见崩溃码解析
+            crash_hints = {
+                3221225477: "（内存访问冲突，可能是数组越界或 None 对象）",
+                3221225725: "（C++ 运行时错误，可能是对象生命周期问题）",
+                3221225786: "（堆损坏，常见于 3D 场景的 OpenGL 资源冲突 → 试试将 ThreeDScene 改为 Scene）",
+            }
+            hint = crash_hints.get(process.returncode, "")
+            err_msg = f"❌ 渲染失败，进程返回码：{process.returncode}{hint}\n{full_log}"
             if progress_callback:
-                progress_callback("failed", f"进程返回码：{process.returncode}")
-            return False, f"❌ 渲染失败，进程返回码：{process.returncode}\n{full_log}", ""
+                progress_callback("failed", f"进程返回码：{process.returncode}{hint}")
+            return False, err_msg, ""
 
     except Exception as e:
         if progress_callback:
