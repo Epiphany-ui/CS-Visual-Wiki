@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { generationApi } from '@/api/generation'
 import { videosApi } from '@/api/videos'
 import { useSSE } from '@/composables/useSSE'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 import { useTaskStore } from '@/stores/task'
 import type { SSETaskEvent, SSEDoneEvent } from '@/types/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -13,6 +14,7 @@ import CanvasTypewriter from '@/components/common/CanvasTypewriter.vue'
 const route = useRoute()
 const taskStore = useTaskStore()
 const { connect, disconnect } = useSSE()
+const { username, token } = useCurrentUser()
 
 const requirement = ref('')
 const code = ref('')
@@ -51,7 +53,7 @@ watch(code, (newVal, oldVal) => {
 
 // ========== 状态持久化：离开再回来界面不变（按用户隔离） ==========
 const STATE_KEY = computed(() => {
-  const u = localStorage.getItem('username') || 'anon'
+  const u = username.value || 'anon'
   return `cs:sandbox-state:${u}`
 })
 
@@ -126,16 +128,15 @@ function onSSEEvent(evt: SSETaskEvent) {
     currentFilename.value = evt.video_path.replace('/videos/', '')
     // 加入"我的作品"（localStorage + 服务端双写）
     try {
-      const u = localStorage.getItem('username') || 'anon'
+      const u = username.value || 'anon'
       const works = JSON.parse(localStorage.getItem(`cs:my-works:${u}`) || '[]')
       if (!works.includes(currentFilename.value)) {
         works.unshift(currentFilename.value)
         localStorage.setItem(`cs:my-works:${u}`, JSON.stringify(works.slice(0, 50)))
       }
       // 同步到服务端（跨设备持久化）
-      const name = localStorage.getItem('username') || ''
-      if (name) {
-        videosApi.syncMyWorks(name, [currentFilename.value]).catch(() => {})
+      if (username.value) {
+        videosApi.syncMyWorks(username.value, [currentFilename.value]).catch(() => {})
       }
     } catch { /* ignore */ }
   }
@@ -223,14 +224,12 @@ function restoreTaskFromSession() {
 // --- 操作 ---
 function handleGenerate() {
   if (!requirement.value.trim()) return
-  const uname = localStorage.getItem('username') || ''
-  startAsyncTask(() => generationApi.asyncGenerate(requirement.value.trim(), 3, renderQuality.value, uname))
+  startAsyncTask(() => generationApi.asyncGenerate(requirement.value.trim(), 3, renderQuality.value, username.value))
 }
 
 function handleRender() {
   if (!code.value.trim()) { ElMessage.warning('请先输入或生成 Manim 代码'); return }
-  const uname = localStorage.getItem('username') || ''
-  startAsyncTask(() => generationApi.asyncRender(code.value, renderQuality.value, uname))
+  startAsyncTask(() => generationApi.asyncRender(code.value, renderQuality.value, username.value))
 }
 
 async function handleCancelTask() {
@@ -278,8 +277,7 @@ async function handlePublish() {
   // 从完整代码中提取场景类名作为智能标题（不截断，避免类名被切碎）
   const classMatch = code.value.match(/class\s+(\w+)\s*\(\s*\w*Scene/)
   const title = classMatch?.[1] || requirement.value.slice(0, 40) || '未命名作品'
-  const token = localStorage.getItem('token')
-  if (!token) { ElMessage.warning('请先登录再发布'); return }
+  if (!token.value) { ElMessage.warning('请先登录再发布'); return }
   try {
     const body = new URLSearchParams()
     body.append('workTitle', title)
@@ -290,7 +288,7 @@ async function handlePublish() {
     const res = await fetch('/api/v1/work/publish', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${token.value}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: body.toString(),
@@ -300,7 +298,7 @@ async function handlePublish() {
       publishDialogVisible.value = false
       // 如果勾选了发布到画廊，同步收藏
       if (publishToGallery.value && currentFilename.value) {
-        videosApi.saveVideo(currentFilename.value, localStorage.getItem('username') || '').then(() => {
+        videosApi.saveVideo(currentFilename.value, username.value).then(() => {
           savedToGallery.value = true
         }).catch(() => {})
       }
@@ -314,7 +312,7 @@ async function handlePublish() {
 async function handleSaveToGallery() {
   if (!currentFilename.value) return
   try {
-    const res = await videosApi.saveVideo(currentFilename.value, localStorage.getItem('username') || '')
+    const res = await videosApi.saveVideo(currentFilename.value, username.value)
     savedToGallery.value = res.data.data?.saved ?? false
     ElMessage.success(savedToGallery.value ? '已收藏' : '已取消收藏')
   } catch { ElMessage.error('操作失败') }

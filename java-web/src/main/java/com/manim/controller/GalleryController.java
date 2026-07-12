@@ -44,7 +44,7 @@ public class GalleryController {
                 "匿名用户";
             String authorAvatar = author != null ? author.getAvatar() : null;
             String createTime = w.getCreateTime() != null ? w.getCreateTime().toString() : null;
-            return new WorkListDTO(w.getId(), w.getCover(), w.getTitle(),
+            return new WorkListDTO(w.getId(), w.getUserId(), w.getCover(), w.getTitle(),
                     w.getDescription(), authorName, authorAvatar,
                     w.getLikeCount(), w.getViewCount(),
                     w.getVideoPath(), createTime);

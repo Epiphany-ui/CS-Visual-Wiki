@@ -5,63 +5,49 @@ import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
 import AvatarIcon from '@/components/common/AvatarIcon.vue'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const appStore = useAppStore()
+const { displayName, avatar: avatarUrl, token, refresh } = useCurrentUser()
 const searchKeyword = ref('')
 const searchFocused = ref(false)
 const themeSpinning = ref(false)
-const avatarUrl = ref('')
-const displayName = ref(userStore.username)
 
 function refreshProfile() {
-  try {
-    const u = userStore.username || 'default'
-    // 迁移旧全局 key → per-user key
-    if (!localStorage.getItem(`cs:avatar:${u}`)) {
-      const old = localStorage.getItem('cs:avatar')
-      if (old) { localStorage.setItem(`cs:avatar:${u}`, old); localStorage.removeItem('cs:avatar') }
-    }
-    if (!localStorage.getItem(`cs:nickname:${u}`)) {
-      const old = localStorage.getItem('cs:nickname')
-      if (old) { localStorage.setItem(`cs:nickname:${u}`, old); localStorage.removeItem('cs:nickname') }
-    }
-    avatarUrl.value = localStorage.getItem(`cs:avatar:${u}`) || ''
-    displayName.value = localStorage.getItem(`cs:nickname:${u}`) || userStore.username
-  } catch { /* ignore */ }
+  // 由 useCurrentUser 的 refresh() 触发重新读取 localStorage
+  // displayName 和 avatarUrl 是 computed，会在 username 变化时自动更新。
+  // 此处保留函数签名供 watch 回调使用，实际数据已由 composable 管理。
 }
-refreshProfile()
 
 // 从 Java 后端拉取最新头像/昵称（跨设备同步）
 async function pullProfileFromBackend() {
-  const token = localStorage.getItem('token')
-  if (!token) return
+  if (!token.value) return
   try {
-    const res = await fetch('/api/v1/user/info', { headers: { 'Authorization': `Bearer ${token}` } })
+    const res = await fetch('/api/v1/user/info', { headers: { 'Authorization': `Bearer ${token.value}` } })
     if (!res.ok) return
     const data = (await res.json()).data
     const u = userStore.username || 'default'
     if (data?.nickname) {
       localStorage.setItem(`cs:nickname:${u}`, data.nickname)
-      displayName.value = data.nickname
     }
     if (data?.avatar) {
       localStorage.setItem(`cs:avatar:${u}`, data.avatar)
-      avatarUrl.value = data.avatar
     }
+    refresh() // 触发 composable 重新读取 localStorage
   } catch { /* ignore */ }
 }
 // 登录后自动从 Java 后端同步最新资料
 if (userStore.isLoggedIn) pullProfileFromBackend()
 
 // 从 Profile 页返回时自动刷新头像和昵称
-watch(() => route.fullPath, () => refreshProfile())
+watch(() => route.fullPath, () => refresh())
 // 登录/登出时自动同步
 watch(() => userStore.isLoggedIn, (loggedIn) => {
-  if (loggedIn) { refreshProfile(); pullProfileFromBackend() }
-  else { avatarUrl.value = ''; displayName.value = '' }
+  if (loggedIn) { refresh(); pullProfileFromBackend() }
+  // 登出时 displayName/avatarUrl 会自动因 username 变为空而更新，无需手动赋值
 })
 
 function handleSearch() {

@@ -6,46 +6,37 @@ import { ElMessage } from 'element-plus'
 import RevealOnScroll from '@/components/common/RevealOnScroll.vue'
 import { videosApi } from '@/api/videos'
 import AvatarIcon from '@/components/common/AvatarIcon.vue'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 
 const userStore = useUserStore()
 const router = useRouter()
-
-// 按用户隔离的 localStorage key（避免换账号后显示旧账号数据）
-function userKey(base: string): string {
-  const u = userStore.username || 'default'
-  return `cs:${base}:${u}`
-}
+const { username, avatar: avatarUrl, displayName, token, userKey, refresh } = useCurrentUser()
 
 const myWorksCount = ref(0)
 const myStarsCount = ref(0)
-// 将旧全局 key（cs:avatar, cs:nickname）迁移到当前用户的 per-user key
-function migrateLegacyProfile() {
-  const oldAvatar = localStorage.getItem('cs:avatar')
-  const oldNick = localStorage.getItem('cs:nickname')
-  if (oldAvatar && !localStorage.getItem(userKey('avatar'))) {
-    localStorage.setItem(userKey('avatar'), oldAvatar)
-    localStorage.removeItem('cs:avatar')
-  }
-  if (oldNick && !localStorage.getItem(userKey('nickname'))) {
-    localStorage.setItem(userKey('nickname'), oldNick)
-    localStorage.removeItem('cs:nickname')
-  }
-}
-migrateLegacyProfile()
 
-const avatarUrl = ref(localStorage.getItem(userKey('avatar')) || '')
 const editingNickname = ref(false)
-const nickname = ref(localStorage.getItem(userKey('nickname')) || userStore.username)
+const editingBio = ref(false)
+const nickname = ref(displayName.value)
+const bio = ref(localStorage.getItem(userStore.username ? userKey('bio') : '') || '')
+
+async function saveBio() {
+  const text = bio.value.trim()
+  localStorage.setItem(userKey('bio'), text)
+  editingBio.value = false
+  ElMessage.success('简介已更新')
+  const ok = await syncProfileToBackend({ intro: text })
+  if (!ok) ElMessage.warning('简介已本地保存，但同步到服务器失败')
+}
 
 async function syncProfileToBackend(fields: Record<string, string>, retries = 2): Promise<boolean> {
-  const token = localStorage.getItem('token')
-  if (!token) return false
+  if (!token.value) return false
   const params = new URLSearchParams(fields).toString()
   for (let i = 0; i <= retries; i++) {
     try {
       const res = await fetch(`/api/v1/user/profile/update?${params}`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Authorization': `Bearer ${token.value}` },
       })
       if (res.ok) return true
     } catch { /* retry */ }
@@ -60,6 +51,7 @@ async function saveNickname() {
   localStorage.setItem(userKey('nickname'), name)
   // 同步更新 login 时的 username（AppHeader 等组件 fallback 时会用到）
   localStorage.setItem('username', name)
+  refresh() // 通知 composable 重新读取 localStorage
   editingNickname.value = false
   ElMessage.success('昵称已更新')
   // 异步同步到 Java 后端
@@ -71,7 +63,7 @@ async function saveNickname() {
 
 function getMyWorksCount(): number {
   try {
-    const u = userStore.username || 'anon'
+    const u = username.value || 'anon'
     const works = JSON.parse(localStorage.getItem(`cs:my-works:${u}`) || '[]')
     return works.length
   } catch { return 0 }
@@ -80,7 +72,7 @@ function getMyWorksCount(): number {
 // 从服务端加载我的作品数量（跨设备同步）
 const serverWorksCount = ref(0)
 async function loadServerWorksCount() {
-  const name = userStore.username
+  const name = username.value
   if (!name) return
   try {
     const res = await videosApi.getMyWorks(name)
@@ -90,7 +82,7 @@ async function loadServerWorksCount() {
 
 // 同步 localStorage 的作品到服务端
 async function syncWorksToServer() {
-  const name = userStore.username
+  const name = username.value
   if (!name) return
   try {
     const works = JSON.parse(localStorage.getItem(`cs:my-works:${name}`) || '[]')
@@ -104,10 +96,8 @@ async function syncWorksToServer() {
 // 自动将 localStorage 中已有的头像和昵称同步到 Java 后端
 async function syncExistingProfileToBackend() {
   const fields: Record<string, string> = {}
-  const avatar = localStorage.getItem(userKey('avatar'))
-  const nickname = localStorage.getItem(userKey('nickname'))
-  if (avatar) fields.avatar = avatar
-  if (nickname) fields.nickname = nickname
+  if (avatarUrl.value) fields.avatar = avatarUrl.value
+  if (displayName.value) fields.nickname = displayName.value
   if (Object.keys(fields).length > 0) {
     await syncProfileToBackend(fields)
   }
@@ -131,8 +121,8 @@ async function handleAvatarUpload(e: Event) {
     const data = await res.json()
     if (data.code === 0 && data.data?.url) {
       const fullUrl = `http://localhost:8000${data.data.url}`
-      avatarUrl.value = fullUrl
       localStorage.setItem(userKey('avatar'), fullUrl)
+      refresh() // 通知 composable 重新读取 localStorage
       ElMessage.success('头像已更新')
       // 同步头像 URL 到 Java 后端数据库
       const ok = await syncProfileToBackend({ avatar: fullUrl })
@@ -153,10 +143,9 @@ function handleLogout() {
 
 // 从 Java 后端拉取最新头像/昵称，更新 localStorage（跨设备同步）
 async function pullProfileFromBackend() {
-  const token = localStorage.getItem('token')
-  if (!token) return
+  if (!token.value) return
   try {
-    const res = await fetch('/api/v1/user/info', { headers: { 'Authorization': `Bearer ${token}` } })
+    const res = await fetch('/api/v1/user/info', { headers: { 'Authorization': `Bearer ${token.value}` } })
     if (!res.ok) return
     const data = (await res.json()).data
     if (data) {
@@ -166,8 +155,8 @@ async function pullProfileFromBackend() {
       }
       if (data.avatar) {
         localStorage.setItem(userKey('avatar'), data.avatar)
-        avatarUrl.value = data.avatar
       }
+      refresh() // 通知 composable 重新读取 localStorage
     }
   } catch { /* ignore */ }
 }
@@ -193,12 +182,21 @@ onMounted(() => {
         <div v-if="editingNickname" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:8px">
           <el-input v-model="nickname" size="small" style="width:180px" @keyup.enter="saveNickname" />
           <el-button size="small" type="primary" @click="saveNickname">确认</el-button>
-          <el-button size="small" @click="editingNickname = false; nickname = localStorage.getItem(userKey('nickname')) || userStore.username">取消</el-button>
+          <el-button size="small" @click="editingNickname = false; nickname = displayName">取消</el-button>
         </div>
         <h2 v-else style="cursor:pointer" @click="editingNickname = true">
           {{ nickname }} <el-icon :size="14"><EditPen /></el-icon>
         </h2>
         <p>ID: {{ userStore.userId }}</p>
+        <!-- 个人简介 -->
+        <div v-if="editingBio" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:8px">
+          <el-input v-model="bio" size="small" style="width:260px" maxlength="200" show-word-limit placeholder="介绍一下自己..." @keyup.enter="saveBio" />
+          <el-button size="small" type="primary" @click="saveBio">确认</el-button>
+          <el-button size="small" @click="editingBio = false">取消</el-button>
+        </div>
+        <p v-else style="cursor:pointer;margin-top:4px;color:var(--text-secondary);font-size:0.85rem" @click="editingBio = true">
+          {{ bio || '点击添加个人简介...' }} <el-icon :size="12"><EditPen /></el-icon>
+        </p>
         <el-button type="primary" round @click="router.push('/sandbox')"><el-icon><EditPen /></el-icon> 开始创作</el-button>
       </div>
     </RevealOnScroll>

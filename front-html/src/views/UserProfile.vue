@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { videosApi } from '@/api/videos'
 import type { VideoFile } from '@/types/task'
@@ -12,34 +12,71 @@ const username = computed(() => route.params.username as string)
 
 const avatarUrl = ref('')
 const displayName = ref(username.value)
+const intro = ref('')
 const loading = ref(true)
 const works = ref<VideoFile[]>([])
 
-// 从社区 API 获取该用户头像和昵称
-async function loadUserInfo() {
+async function loadAll() {
+  loading.value = true
   try {
-    const res = await fetch(`/api/v1/gallery/list?sort=time&size=50`)
-    if (!res.ok) return
-    const data = await res.json()
-    const userPost = (data.data?.list || []).find((p: any) => p.authorName === username.value)
+    // 1) 从社区 API 获取该用户的 authorId、头像、昵称
+    const gRes = await fetch(`/api/v1/gallery/list?sort=time&size=100`)
+    const gData = gRes.ok ? await gRes.json() : null
+    const userPost = (gData?.data?.list || []).find((p: any) => p.authorName === username.value)
     if (userPost) {
       displayName.value = userPost.authorName || username.value
       avatarUrl.value = userPost.authorAvatar || ''
     }
-  } catch { /* ignore */ }
-}
+    const authorId = userPost?.authorId
 
-// 直接用已提供的 my_works API（服务端 Redis 存储）
-async function loadUserWorks() {
-  loading.value = true
-  try {
-    const res = await videosApi.getMyWorks(username.value)
-    works.value = res.data.data?.items || []
+    // 2) 从 Java 获取该用户的简介和作品列表
+    if (authorId) {
+      try {
+        const ir = await fetch(`/api/v1/user/author/home?authorId=${authorId}`)
+        if (ir.ok) {
+          const idata = await ir.json()
+          const info = idata.data?.authorInfo
+          if (info) {
+            intro.value = info.intro || ''
+            displayName.value = info.nickname || displayName.value
+            avatarUrl.value = info.avatar || avatarUrl.value
+          }
+          // 该作者的公开作品
+          const wList = idata.data?.workList || []
+          works.value = wList.map((w: any) => ({
+            filename: w.videoPath?.split('/').pop() || '',
+            task_id: w.videoPath?.split('/').pop()?.replace('.mp4','') || '',
+            size_bytes: 0, size_mb: 0,
+            created_at: w.createTime || '',
+            url: w.videoPath || '',
+            poster: '',
+            title: w.title || '',
+          }))
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 3) fallback: 从 Python 后端按 username 过滤
+    if (works.value.length === 0) {
+      const pyRes = await fetch(`/api/videos/list?my_works=true&username=${encodeURIComponent(username.value)}`)
+      if (pyRes.ok) {
+        const pyData = await pyRes.json()
+        works.value = pyData.data?.items || []
+      }
+    }
   } catch { /* ignore */ }
   finally { loading.value = false }
 }
 
-onMounted(() => { loadUserInfo(); loadUserWorks() })
+onMounted(() => { loadAll() })
+watch(() => route.params.username, () => {
+  if (route.params.username) {
+    // 切换用户时重置数据并重新加载
+    works.value = []
+    intro.value = ''
+    loadAll()
+  }
+})
 </script>
 
 <template>
@@ -54,11 +91,8 @@ onMounted(() => { loadUserInfo(); loadUserWorks() })
         <AvatarIcon :name="displayName" :size="80" :avatar-url="avatarUrl" />
         <h2>{{ displayName }}</h2>
         <p class="user-id">@{{ username }}</p>
-        <!-- 个性化区域留空，待后续扩展 -->
-        <div class="user-bio-placeholder">
-          <el-icon :size="16"><EditPen /></el-icon>
-          <span>这个人很懒，还没有填写个人简介…</span>
-        </div>
+        <div v-if="intro" class="user-bio">{{ intro }}</div>
+        <div v-else class="user-bio-placeholder">这个人很懒，还没有填写个人简介…</div>
       </div>
     </RevealOnScroll>
 

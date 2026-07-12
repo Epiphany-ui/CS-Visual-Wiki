@@ -3,9 +3,11 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { videosApi } from '@/api/videos'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 
 const route = useRoute()
 const router = useRouter()
+const { username } = useCurrentUser()
 const filename = route.params.filename as string
 const videoUrl = videosApi.getPlayUrl(filename)
 const downloadUrl = videosApi.getDownloadUrl(filename)
@@ -27,7 +29,7 @@ async function loadTitle() {
     titleInput.value = videoTitle.value
     // 检查所有权
     videoOwner.value = meta?.username || meta?.created_by || ''
-    const curUser = localStorage.getItem('username') || ''
+    const curUser = username.value
     // 检查所有权：视频 username 匹配当前用户，或视频在服务端 user-works 中
     if (curUser && videoOwner.value !== curUser) {
       // 异步查询服务端是否在 user-works 中（用于"匿名"视频的认领）
@@ -39,7 +41,7 @@ async function loadTitle() {
         }
       }).catch(() => {})
     }
-    isOwner.value = curUser && videoOwner.value === curUser
+    isOwner.value = !!curUser && videoOwner.value === curUser
   } catch { videoTitle.value = filename }
 }
 
@@ -56,8 +58,7 @@ async function handleRename() {
 
 async function checkSaved() {
   try {
-    const uname = localStorage.getItem('username') || ''
-    const res = await videosApi.getList(true, uname)
+    const res = await videosApi.getList(true, username.value)
     const items: { filename: string }[] = res.data.data?.items || []
     saved.value = items.some((v) => v.filename === filename)
   } catch { /* ignore */ }
@@ -65,7 +66,7 @@ async function checkSaved() {
 
 async function handleSave() {
   try {
-    const res = await videosApi.saveVideo(filename, localStorage.getItem('username') || '')
+    const res = await videosApi.saveVideo(filename, username.value)
     saved.value = res.data.data?.saved ?? false
     ElMessage.success(saved.value ? '已收藏' : '已取消收藏')
   } catch {

@@ -6,20 +6,21 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import AvatarIcon from '@/components/common/AvatarIcon.vue'
 import { videosApi } from '@/api/videos'
 import { communityApi, type Comment } from '@/api/community'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 
 const router = useRouter()
+const { username: currentUser, displayName: currentDisplayName, avatar: currentAvatar, token, isLoggedIn } = useCurrentUser()
 const posts = ref<any[]>([])
 const deletingPost = ref<Set<number>>(new Set())
 const forkingPost = ref<Set<number>>(new Set())
 
 async function handleFork(post: any) {
-  const token = localStorage.getItem('token')
-  if (!token) { ElMessage.warning('请先登录'); return }
+  if (!isLoggedIn.value) { ElMessage.warning('请先登录'); return }
   forkingPost.value.add(post.id)
   try {
     const res = await fetch(`/api/v1/work/fork?workId=${post.id}`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: { 'Authorization': `Bearer ${token.value}` },
     })
     const data = await res.json()
     if (data.code === 200 && data.data?.sourceCode) {
@@ -41,10 +42,9 @@ async function handleDeletePost(post: any) {
   } catch { return }
   deletingPost.value.add(post.id)
   try {
-    const token = localStorage.getItem('token')
     const res = await fetch(`/api/v1/work/${post.id}`, {
       method: 'DELETE',
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      headers: token.value ? { 'Authorization': `Bearer ${token.value}` } : {},
     })
     if (res.ok) {
       posts.value = posts.value.filter(p => p.id !== post.id)
@@ -60,9 +60,7 @@ const sortBy = ref<'time' | 'likes' | 'views'>('time')
 const showVideo = ref<number | null>(null)
 const expandedComments = ref<Set<number>>(new Set())
 const commentInputs = reactive<Record<number, string>>({})
-const currentUser = ref(localStorage.getItem('username') || '')
-const currentDisplayName = ref(localStorage.getItem(`cs:nickname:${currentUser.value}`) || '')
-const currentAvatar = ref(localStorage.getItem(`cs:avatar:${currentUser.value}`) || '')
+const replyTo = reactive<Record<number, { name: string; commentId: string } | null>>({})
 
 function getThumbnailUrl(post: any): string {
   if (post.cover) return post.cover
@@ -159,9 +157,12 @@ async function loadComments(postId: number, limit = 50) {
 async function submitComment(postId: number) {
   const text = commentInputs[postId]?.trim()
   if (!text || !currentUser.value) return
+  const reply = replyTo[postId]
+  const displayText = reply ? `回复 @${reply.name}：${text}` : text
   try {
-    await communityApi.addComment(postId, currentDisplayName.value || currentUser.value, text, currentAvatar.value)
+    await communityApi.addComment(postId, currentDisplayName.value || currentUser.value, displayText, currentAvatar.value)
     commentInputs[postId] = ''
+    replyTo[postId] = null
     loadComments(postId)
   } catch { /* ignore */ }
 }
@@ -282,7 +283,7 @@ onMounted(async () => { await loadPosts(); preloadTopComments() })
           <div v-for="c in post._comments.slice(0, 3)" :key="c.id" class="comment-item">
             <AvatarIcon :name="c.username" :size="22" :avatar-url="getCommentAvatar(c, post)" />
             <div class="comment-body">
-              <span class="comment-name">{{ c.username }}</span>
+              <span class="comment-name" @click="router.push(`/user/${encodeURIComponent(c.username)}`)">{{ c.username }}</span>
               <span class="comment-text">{{ c.text }}</span>
             </div>
             <span class="comment-likes" @click.stop="handleCommentLike(post.id, c.id)">👍🏻 {{ c.likes }}</span>
@@ -298,17 +299,17 @@ onMounted(async () => { await loadPosts(); preloadTopComments() })
             <AvatarIcon :name="c.username" :size="28" :avatar-url="getCommentAvatar(c, post)" />
             <div class="comment-body">
               <div class="comment-header">
-                <span class="comment-name">{{ c.username }}</span>
-                <span class="comment-likes" @click="handleCommentLike(post.id, c.id)">
-                  👍🏻 {{ c.likes }}
-                </span>
+                <span class="comment-name" @click="router.push(`/user/${encodeURIComponent(c.username)}`)">{{ c.username }}</span>
+                <span class="comment-likes" @click="handleCommentLike(post.id, c.id)">👍🏻 {{ c.likes }}</span>
               </div>
               <span class="comment-text">{{ c.text }}</span>
+              <span class="comment-reply-btn" @click="replyTo[post.id] = replyTo[post.id]?.commentId === c.id ? null : {name:c.username, commentId:c.id}; commentInputs[post.id] = ''">回复</span>
             </div>
           </div>
           <div v-if="post._comments.length === 0" class="comments-empty">暂无评论，来发表第一条吧</div>
+          <div v-if="replyTo[post.id]" class="reply-hint">回复 @{{ replyTo[post.id]?.name }} <span class="reply-cancel" @click="replyTo[post.id]=null; commentInputs[post.id]=''">取消</span></div>
           <div class="comment-input-row">
-            <el-input v-model="commentInputs[post.id]" placeholder="写下你的评论..." size="small" @keyup.enter="submitComment(post.id)" />
+            <el-input v-model="commentInputs[post.id]" :placeholder="replyTo[post.id] ? '写下回复...' : '写下你的评论...'" size="small" @keyup.enter="submitComment(post.id)" />
             <el-button size="small" type="primary" @click="submitComment(post.id)" :disabled="!commentInputs[post.id]?.trim()">发送</el-button>
           </div>
           <div class="comments-toggle" @click="toggleComments(post.id)">收起 ↑</div>
@@ -447,7 +448,8 @@ onMounted(async () => { await loadPosts(); preloadTopComments() })
 }
 .comment-body { flex: 1; min-width: 0; }
 .comment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
-.comment-name { font-size: 0.8rem; font-weight: 650; color: var(--text-secondary); }
+.comment-name { font-size: 0.8rem; font-weight: 650; color: var(--text-secondary); cursor: pointer; }
+.comment-name:hover { color: var(--accent-purple-light); text-decoration: underline; }
 .comment-text {
   font-size: 0.86rem; color: var(--text-primary);
   word-break: break-word; display: block; margin-top: 3px;
@@ -468,6 +470,11 @@ onMounted(async () => { await loadPosts(); preloadTopComments() })
   font-weight: 500; transition: opacity 0.15s;
 }
 .comments-toggle:hover { opacity: 0.8; }
+.comment-reply-btn { font-size: 0.75rem; color: var(--text-tertiary); cursor: pointer; }
+.comment-reply-btn:hover { color: var(--accent-purple-light); }
+.reply-hint { font-size: 0.78rem; color: var(--accent-purple-light); padding: 4px 0; }
+.reply-cancel { cursor: pointer; color: var(--text-tertiary); margin-left: 8px; }
+.reply-cancel:hover { color: var(--text-primary); }
 .comments-empty { font-size: 0.82rem; color: var(--text-tertiary); text-align: center; padding: 12px 0; }
 .comment-input-row { display: flex; gap: 8px; margin-top: 10px; }
 .comment-input-row :deep(.el-input__wrapper) { background: var(--bg-secondary); border-radius: 20px; }

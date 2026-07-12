@@ -5,9 +5,11 @@ import { videosApi } from '@/api/videos'
 import { tasksApi } from '@/api/tasks'
 import type { VideoFile } from '@/types/task'
 import PageHeader from '@/components/common/PageHeader.vue'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 
 const router = useRouter()
 const route = useRoute()
+const { username } = useCurrentUser()
 const allVideos = ref<VideoFile[]>([])
 const starredVideos = ref<VideoFile[]>([])
 const loading = ref(false)
@@ -18,7 +20,7 @@ const activeTab = ref<'all' | 'my-works' | 'stars'>(
 
 function getMyWorks(): string[] {
   try {
-    const u = localStorage.getItem('username') || 'anon'
+    const u = username.value || 'anon'
     return JSON.parse(localStorage.getItem(`cs:my-works:${u}`) || '[]')
   } catch { return [] }
 }
@@ -49,7 +51,7 @@ async function loadAll() {
 
 async function loadStars() {
   try {
-    const res = await videosApi.getList(true, localStorage.getItem('username') || '')  // starred only
+    const res = await videosApi.getList(true, username.value)  // starred only
     starredVideos.value = res.data.data?.items || []
   } catch { /* ignore */ }
 }
@@ -57,15 +59,14 @@ async function loadStars() {
 // 从服务端加载"我的作品"列表（跨设备同步，不依赖 localStorage）
 const serverMyWorks = ref<VideoFile[]>([])
 async function loadMyWorksFromServer() {
-  const name = localStorage.getItem('username') || ''
-  if (!name) return
+  if (!username.value) return
   try {
-    const res = await videosApi.getMyWorks(name)
+    const res = await videosApi.getMyWorks(username.value)
     serverMyWorks.value = res.data.data?.items || []
     // 降级：合并 localStorage 中可能有但服务端还没有的
     const local = getMyWorks()
     if (local.length > 0) {
-      await videosApi.syncMyWorks(name, local).catch(() => {})
+      await videosApi.syncMyWorks(username.value, local).catch(() => {})
     }
   } catch { /* ignore */ }
 }
@@ -92,7 +93,7 @@ async function syncPendingTasks() {
   try {
     const pending: string[] = JSON.parse(localStorage.getItem('cs:pending-tasks') || '[]')
     if (!pending.length) return
-    const u = localStorage.getItem('username') || 'anon'
+    const u = username.value || 'anon'
     const works: string[] = JSON.parse(localStorage.getItem(`cs:my-works:${u}`) || '[]')
     let changed = false
     for (const tid of pending.slice(0, 10)) {
@@ -108,7 +109,6 @@ async function syncPendingTasks() {
       } catch { /* skip */ }
     }
     if (changed) {
-      const u = localStorage.getItem('username') || 'anon'
       localStorage.setItem(`cs:my-works:${u}`, JSON.stringify(works.slice(0, 50)))
       // 重新加载全部列表以更新标题
       await loadAll()
@@ -121,6 +121,11 @@ async function syncPendingTasks() {
 onMounted(() => { loadAll().then(() => loadStars()).then(() => syncPendingTasks()).then(() => loadMyWorksFromServer()) })
 watch(() => route.query.tab, (t) => {
   if (t === 'all' || t === 'my-works' || t === 'stars') activeTab.value = t
+})
+// 切换到"我的作品"或"我的收藏"时重新加载（处理用户切换场景）
+watch(activeTab, (tab) => {
+  if (tab === 'my-works') loadMyWorksFromServer()
+  if (tab === 'stars') loadStars()
 })
 </script>
 

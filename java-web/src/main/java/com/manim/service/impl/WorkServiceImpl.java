@@ -120,6 +120,7 @@ public class WorkServiceImpl implements WorkService {
             User author = userMapper.selectById(w.getUserId());
             return new WorkListDTO(
                     w.getId(),
+                    w.getUserId(),
                     w.getCover(),
                     w.getTitle(),
                     w.getDescription(),
