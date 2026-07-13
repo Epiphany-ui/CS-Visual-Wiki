@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # ==================== 安全配置 ====================
     api_key: Optional[str] = None  # 若设置，则所有 /api/* 请求需携带 X-API-Key 头
+    jwt_secret: str = "ManimAI2024SecretKeyForJWTTokenGenerationMustBe256BitsLong!!"  # 与 Java 后端一致
 
     # ==================== 速率限制 ====================
     rate_limit_enabled: bool = True

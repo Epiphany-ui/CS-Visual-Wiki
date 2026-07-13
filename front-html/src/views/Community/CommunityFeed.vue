@@ -25,6 +25,7 @@ async function handleFork(post: any) {
     const data = await res.json()
     if (data.code === 200 && data.data?.sourceCode) {
       sessionStorage.setItem('cs:forked-code', data.data.sourceCode)
+      sessionStorage.setItem('cs:fork-source-id', String(post.id))
       router.push('/sandbox?fork=1')
       ElMessage.success('已 Fork 到沙箱')
     } else {
@@ -254,6 +255,7 @@ onMounted(refreshFeed)
         <!-- 文字内容 -->
         <div class="post-body">
           <h3 class="post-title">{{ post.title }}</h3>
+          <p v-if="post.sourceAuthorName" class="post-fork-from">Fork 自 <span class="fork-author" @click.stop="router.push(`/user/${post.sourceAuthorId || post.sourceAuthorName}`)">@{{ post.sourceAuthorName }}</span></p>
           <p v-if="post.text" class="post-text">{{ post.text }}</p>
         </div>
 
@@ -280,7 +282,7 @@ onMounted(refreshFeed)
             💬 {{ post._commentTotal || '' }}
           </span>
           <span class="post-action" @click="handleFork(post)">
-            {{ forkingPost.has(post.id) ? '⏳' : '🔗' }} Fork
+            {{ forkingPost.has(post.id) ? '⏳' : '🔗' }} {{ post.forkCount || 0 }}
           </span>
           <span class="post-action">
             👁 {{ post._views }}
@@ -488,5 +490,8 @@ onMounted(refreshFeed)
 .comment-input-row { display: flex; gap: 8px; margin-top: 10px; }
 .comment-input-row :deep(.el-input__wrapper) { background: var(--bg-secondary); border-radius: 20px; }
 
+.post-fork-from { font-size: 0.78rem; color: var(--text-tertiary); margin-top: 2px; }
+.fork-author { color: var(--accent-purple-light); cursor: pointer; font-weight: 500; }
+.fork-author:hover { text-decoration: underline; }
 .empty-state { text-align: center; padding: 60px 0; }
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { videosApi } from '@/api/videos'
 import { tasksApi } from '@/api/tasks'
 import type { VideoFile } from '@/types/task'
@@ -66,6 +67,47 @@ async function loadMyWorksFromServer() {
     const d = await r.json()
     serverMyWorks.value = d.data?.items || []
   } catch { /* ignore */ }
+}
+
+const selectedFiles = ref<Set<string>>(new Set())
+const batchDeleting = ref(false)
+const batchPublishing = ref(false)
+
+function toggleSelect(filename: string) {
+  if (selectedFiles.value.has(filename)) {
+    selectedFiles.value.delete(filename)
+  } else {
+    selectedFiles.value.add(filename)
+  }
+  selectedFiles.value = new Set(selectedFiles.value)
+}
+
+async function batchDelete() {
+  try {
+    await ElMessageBox.confirm(`确定要删除选中的 ${selectedFiles.value.size} 个视频吗？`, '批量删除', { type: 'warning' })
+  } catch { return }
+  batchDeleting.value = true
+  let ok = 0
+  for (const fn of selectedFiles.value) {
+    try { await videosApi.deleteVideo(fn); ok++ } catch { /* skip */ }
+  }
+  selectedFiles.value = new Set()
+  batchDeleting.value = false
+  ElMessage.success(`已删除 ${ok} 个视频`)
+  loadAll()
+  loadMyWorksFromServer()
+}
+
+async function batchPublish() {
+  batchPublishing.value = true
+  let ok = 0
+  for (const fn of selectedFiles.value) {
+    try { await videosApi.togglePublic(fn); ok++ } catch { /* skip */ }
+  }
+  selectedFiles.value = new Set()
+  batchPublishing.value = false
+  ElMessage.success(`已切换 ${ok} 个视频的发布状态`)
+  loadAll()
 }
 
 const sortBy = ref<'time' | 'title' | 'size'>('time')
@@ -148,9 +190,23 @@ watch(activeTab, (tab) => {
       </el-select>
     </div>
 
+    <!-- 批量操作栏 -->
+    <div v-if="activeTab === 'my-works' && selectedFiles.size > 0" class="batch-bar">
+      <span>已选 {{ selectedFiles.size }} 个</span>
+      <el-button size="small" type="primary" :loading="batchPublishing" @click="batchPublish">切换公开/私有</el-button>
+      <el-button size="small" type="danger" :loading="batchDeleting" @click="batchDelete">批量删除</el-button>
+      <el-button size="small" @click="selectedFiles = new Set()">取消选择</el-button>
+    </div>
+
     <div class="gallery-grid" v-loading="loading">
       <div v-for="v in sortedVideos" :key="v.filename" class="g-card glass-card" v-tilt @click="router.push(`/gallery/${v.filename}`)">
         <div class="g-thumb">
+          <el-checkbox
+            v-if="activeTab === 'my-works'"
+            :model-value="selectedFiles.has(v.filename)"
+            class="g-check"
+            @click.stop @change="toggleSelect(v.filename)"
+          />
           <img :src="(v as any).poster || videosApi.getThumbnailUrl(v.filename)"
                loading="lazy"
                class="g-thumb-img"
@@ -192,5 +248,13 @@ watch(activeTab, (tab) => {
 .g-info { padding: var(--space-md); }
 .g-info h4 { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g-size { font-size: 0.75rem; color: var(--text-tertiary); }
+.g-check { position: absolute; top: 8px; left: 8px; z-index: 5; }
+.batch-bar {
+  display: flex; align-items: center; gap: var(--space-md);
+  padding: var(--space-sm) var(--space-lg); margin-bottom: var(--space-md);
+  background: var(--bg-card); border: 1px solid var(--accent-purple);
+  border-radius: var(--radius-lg); max-width: var(--max-content-width);
+  margin-left: auto; margin-right: auto;
+}
 .empty-state { text-align: center; padding: var(--space-3xl); }
 </style>

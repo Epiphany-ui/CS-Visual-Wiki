@@ -46,6 +46,7 @@ from services.progress_service import (
     save_to_gallery, is_in_gallery, get_gallery_filenames,
     save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
     add_to_user_works, get_user_works, mark_task_cancelled,
+    set_video_published, is_video_published,
 )
 from services.comment_service import (
     toggle_like, is_liked, get_like_counts, check_user_likes,
@@ -60,6 +61,7 @@ from services.middleware import (
     RequestIDMiddleware, RequestLoggingMiddleware,
     ApiKeyMiddleware, RateLimitMiddleware,
 )
+from services.jwt_middleware import JwtUserMiddleware
 from services.code_validator import validate_code
 
 # ===================== FastAPI 应用初始化 =====================
@@ -78,7 +80,9 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(ApiKeyMiddleware)
 # 4. 速率限制
 app.add_middleware(RateLimitMiddleware)
-# 5. CORS 跨域配置（可配置化）
+# 5. JWT 用户身份注入（社区/用户端点从 request.state.username 获取身份）
+app.add_middleware(JwtUserMiddleware)
+# 6. CORS 跨域配置（可配置化）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -772,33 +776,33 @@ async def api_task_stream(task_id: str):
 
 
 @app.get("/api/videos/list")
-async def api_videos_list(gallery: bool = False, my_works: bool = False, username: str = ""):
+async def api_videos_list(gallery: bool = False, my_works: bool = False, username: str = "", published: bool = False):
     """
     列出所有已生成的视频文件。
-    ?gallery=true 时仅返回已收藏到画廊的视频。
-    ?my_works=true&username=xxx 时仅返回该用户的作品（服务端持久化）。
-    每条记录会合并视频元数据（标题等）。
+    ?published=true 时仅返回已发布到画廊的视频（默认 false 返回全部）。
+    ?gallery=true&username=xxx 时仅返回已收藏的视频。
+    ?my_works=true&username=xxx 时仅返回该用户的作品（包括私有）。
     """
     videos = list_videos()
     metas = get_all_video_metas()
-    # 合并元数据
     for v in videos:
         fn = v.get("filename", "")
         meta = metas.get(fn, {})
         v["title"] = (meta.get("title") or b"").decode("utf-8") if isinstance(meta.get("title"), bytes) else (meta.get("title") or fn)
         v["username"] = (meta.get("username") or b"").decode("utf-8") if isinstance(meta.get("username"), bytes) else (meta.get("username") or "匿名")
         v["created_by"] = v.get("username", "匿名")
+        v["published"] = (meta.get("published") or b"0").decode("utf-8") if isinstance(meta.get("published"), bytes) else (meta.get("published") or "0")
     if gallery:
         saved = get_gallery_filenames(username)
         videos = [v for v in videos if v.get("filename") in saved]
     if my_works and username:
-        # 优先用 Redis user-works set，fallback 到视频元数据 username 字段
         works = get_user_works(username)
         if works:
             videos = [v for v in videos if v.get("filename") in works]
         else:
-            # user-works 为空时，直接按视频元数据的 username 过滤
             videos = [v for v in videos if v.get("username") == username or v.get("created_by") == username]
+    if published:
+        videos = [v for v in videos if v.get("published") == "1"]
     return success_response({"items": videos, "total": len(videos)})
 
 
@@ -806,16 +810,37 @@ async def api_videos_list(gallery: bool = False, my_works: bool = False, usernam
 async def api_videos_save(filename: str, username: str = ""):
     """
     Toggle 画廊收藏：已收藏则取消，未收藏则添加。
-    同时加入用户作品列表（服务端持久化）。
+    同时加入用户作品列表 + 标记为已发布。
     返回 {saved: true/false}。
     """
     if not _is_safe_filename(filename):
         return error_response("非法文件名")
     saved = save_to_gallery(filename, username)
-    # 同步到用户作品列表
     if saved and username:
         add_to_user_works(username, filename)
+        set_video_published(filename, True)  # 收藏 = 发布到画廊
     return success_response({"filename": filename, "saved": saved}, "已收藏" if saved else "已取消收藏")
+
+
+@app.post("/api/videos/{filename}/publish")
+async def api_videos_publish(filename: str, username: str = ""):
+    """发布视频到画廊（公开可见）"""
+    if not _is_safe_filename(filename):
+        return error_response("非法文件名")
+    set_video_published(filename, True)
+    if username:
+        add_to_user_works(username, filename)
+    return success_response({"filename": filename, "published": True}, "已发布")
+
+
+@app.post("/api/videos/{filename}/toggle-public")
+async def api_videos_toggle_public(filename: str):
+    """切换视频的公开/私有状态"""
+    if not _is_safe_filename(filename):
+        return error_response("非法文件名")
+    current = is_video_published(filename)
+    set_video_published(filename, not current)
+    return success_response({"filename": filename, "published": not current}, "已设为公开" if not current else "已设为私有")
 
 
 @app.post("/api/user/works/sync")

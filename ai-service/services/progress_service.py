@@ -6,6 +6,7 @@
 配合 Celery Worker + SSE 端点使用，为前端提供"渲染中→完成"的实时反馈。
 """
 import json
+import sys
 import time
 from datetime import datetime
 from typing import Optional, Dict, List
@@ -188,14 +189,35 @@ def save_video_meta(filename: str, title: str = "", username: str = ""):
         r.hset(key, "title", title or filename)
         r.hset(key, "created_at", datetime.now().isoformat())
         r.hset(key, "username", username or "匿名")
-        # 永久存储，不再设置 30 天 TTL
+        r.hset(key, "published", "0")  # 默认未发布到画廊
         # 同步加入用户作品列表（服务端持久化）
         if username and username != "匿名":
             r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
-            # 用户作品列表永久存储，不再设置 90 天 TTL
         _maybe_bgsave()
     except Exception:
         pass
+
+
+def set_video_published(filename: str, published: bool = True):
+    """设置视频的发布状态"""
+    try:
+        r = _get_redis()
+        key = f"{VIDEO_META_PREFIX}:{filename}"
+        r.hset(key, "published", "1" if published else "0")
+        _maybe_bgsave()
+    except Exception:
+        pass
+
+
+def is_video_published(filename: str) -> bool:
+    """检查视频是否已发布到画廊"""
+    try:
+        r = _get_redis()
+        key = f"{VIDEO_META_PREFIX}:{filename}"
+        val = r.hget(key, "published") or b"0"
+        return val == "1" if isinstance(val, str) else val == b"1"
+    except Exception:
+        return False
 
 
 def add_to_user_works(username: str, filename: str) -> bool:
@@ -283,12 +305,14 @@ def _gallery_key(username: str = "") -> str:
 
 def _maybe_bgsave():
     """在关键写入后手动触发持久化。
-    使用 SAVE（同步）而非 BGSAVE，因为 BGSAVE 依赖 fork()，
-    在 Windows 上不可用，会导致数据静默丢失。
+    Windows 用 SAVE（同步），Linux/Mac 用 BGSAVE（异步 fork）。
     """
     try:
         r = _get_redis()
-        r.save()
+        if sys.platform == "win32":
+            r.save()
+        else:
+            r.bgsave()
     except Exception:
         pass
 

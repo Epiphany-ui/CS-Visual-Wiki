@@ -36,6 +36,18 @@ public class WorkListDTO {
     @Schema(description = "播放量")
     private Integer viewCount;
 
+    @Schema(description = "Fork 来源作品 ID")
+    private Integer sourceWorkId;
+
+    @Schema(description = "Fork 来源作者名")
+    private String sourceAuthorName;
+
+    @Schema(description = "Fork 来源作者 ID")
+    private Integer sourceAuthorId;
+
+    @Schema(description = "Fork 次数")
+    private Integer forkCount;
+
     @Schema(description = "视频路径")
     private String videoPath;
 
@@ -46,7 +58,8 @@ public class WorkListDTO {
 
     public WorkListDTO(Integer workId, Integer authorId, String cover, String title, String description,
                        String authorName, String authorAvatar, Integer likeCount,
-                       Integer viewCount, String videoPath, String createTime) {
+                       Integer viewCount, Integer sourceWorkId, String sourceAuthorName,
+                       Integer sourceAuthorId, Integer forkCount, String videoPath, String createTime) {
         this.workId = workId;
         this.authorId = authorId;
         this.cover = cover;
@@ -56,6 +69,10 @@ public class WorkListDTO {
         this.authorAvatar = authorAvatar;
         this.likeCount = likeCount;
         this.viewCount = viewCount;
+        this.sourceWorkId = sourceWorkId;
+        this.sourceAuthorName = sourceAuthorName;
+        this.sourceAuthorId = sourceAuthorId;
+        this.forkCount = forkCount;
         this.videoPath = videoPath;
         this.createTime = createTime;
     }
@@ -86,6 +103,18 @@ public class WorkListDTO {
 
     public Integer getViewCount() { return viewCount; }
     public void setViewCount(Integer viewCount) { this.viewCount = viewCount; }
+
+    public Integer getSourceWorkId() { return sourceWorkId; }
+    public void setSourceWorkId(Integer sourceWorkId) { this.sourceWorkId = sourceWorkId; }
+
+    public String getSourceAuthorName() { return sourceAuthorName; }
+    public void setSourceAuthorName(String sourceAuthorName) { this.sourceAuthorName = sourceAuthorName; }
+
+    public Integer getSourceAuthorId() { return sourceAuthorId; }
+    public void setSourceAuthorId(Integer sourceAuthorId) { this.sourceAuthorId = sourceAuthorId; }
+
+    public Integer getForkCount() { return forkCount; }
+    public void setForkCount(Integer forkCount) { this.forkCount = forkCount; }
 
     public String getVideoPath() { return videoPath; }
     public void setVideoPath(String videoPath) { this.videoPath = videoPath; }

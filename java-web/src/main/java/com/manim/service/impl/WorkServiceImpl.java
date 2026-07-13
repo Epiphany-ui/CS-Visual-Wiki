@@ -128,6 +128,10 @@ public class WorkServiceImpl implements WorkService {
                     author != null ? author.getAvatar() : null,
                     w.getLikeCount(),
                     w.getViewCount(),
+                    w.getSourceWorkId(),
+                    null, // sourceAuthorName
+                    null, // sourceAuthorId
+                    w.getForkCount(),
                     w.getVideoPath(),
                     w.getCreateTime() != null ? w.getCreateTime().format(fmt) : null
             );

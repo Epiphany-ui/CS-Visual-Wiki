@@ -33,6 +33,7 @@ const currentFilename = ref('')
 const publishDialogVisible = ref(false)
 const publishDesc = ref('')
 const publishToGallery = ref(false)
+const PY_BASE = import.meta.env.VITE_PYTHON_BASE || 'http://localhost:8000'
 const renderQuality = ref(localStorage.getItem('cs:render-quality') || '-qm')
 let _activeTaskId = ''
 let _aiChanging = false   // 标记正在由 AI 修改代码（触发 typewriter）
@@ -127,7 +128,7 @@ function onSSEEvent(evt: SSETaskEvent) {
   if ((evt as any).code) { _aiChanging = true; code.value = (evt as any).code }
   if (evt.video_path) {
     videoPath.value = evt.video_path
-    videoUrl.value = `http://localhost:8000${evt.video_path}`
+    videoUrl.value = evt.video_path  // 相对路径，走 Vite 代理 /videos → :8000
     currentFilename.value = evt.video_path.replace('/videos/', '')
     // 加入"我的作品"（localStorage + 服务端双写）
     try {
@@ -181,7 +182,7 @@ function restoreTaskFromSession() {
     if (cached.code) code.value = cached.code
     if (cached.videoPath) {
       videoPath.value = cached.videoPath
-      videoUrl.value = `http://localhost:8000${cached.videoPath}`
+      videoUrl.value = cached.videoPath  // 相对路径，走 Vite 代理
       currentFilename.value = cached.videoPath.replace('/videos/', '')
     }
     return
@@ -244,7 +245,7 @@ async function handleCancelTask() {
     generating.value = false
     progressMsg.value = '任务已取消'
     // 尝试通知后端取消 Celery 任务
-    await fetch(`http://localhost:8000/api/tasks/${_activeTaskId}`, { method: 'DELETE' }).catch(() => {})
+    await fetch(`${PY_BASE}/api/tasks/${_activeTaskId}`, { method: 'DELETE' }).catch(() => {})
     localStorage.removeItem('cs:active-task')
   } catch { /* ignore */ }
 }
@@ -286,6 +287,12 @@ async function handlePublish() {
     body.append('isPublic', 'true')
     body.append('code', code.value)
     body.append('previewUrl', videoUrl.value || '')
+    // 如果是 Fork 的作品，传递来源 ID
+    const forkSourceId = sessionStorage.getItem('cs:fork-source-id')
+    if (forkSourceId) {
+      body.append('sourceWorkId', forkSourceId)
+      sessionStorage.removeItem('cs:fork-source-id')
+    }
     const res = await fetch('/api/v1/work/publish', {
       method: 'POST',
       headers: {
@@ -430,7 +437,7 @@ function loadTaskFromQueue(taskId: string) {
   }
   if (task.videoPath) {
     videoPath.value = task.videoPath
-    videoUrl.value = `http://localhost:8000${task.videoPath}`
+    videoUrl.value = task.videoPath  // 相对路径，走 Vite 代理
     currentFilename.value = task.videoPath.replace('/videos/', '')
   } else {
     videoPath.value = ''
@@ -567,28 +574,33 @@ onUnmounted(() => {
       </div>
 
       <div class="sb-panel panel-preview">
-        <ParamPanel :code="code" @update:code="(v: string) => { code = v }" @render="handleRender" />
-        <TaskQueue @load-task="loadTaskFromQueue" />
-        <div class="panel-header"><el-icon><VideoCamera /></el-icon> 预览</div>
-        <div class="panel-body preview-body">
-          <div v-if="videoUrl" class="video-player">
-            <video :src="videoUrl" controls autoplay loop class="preview-video" />
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <el-button :type="savedToGallery ? 'warning' : 'default'" size="small" round @click="handleSaveToGallery">
-                <el-icon><StarFilled v-if="savedToGallery" /><Star v-else /></el-icon>
-                {{ savedToGallery ? '已收藏' : '收藏' }}
-              </el-button>
-              <el-button size="small" type="success" round @click="openPublishDialog">
-                <el-icon><Upload /></el-icon> 发布到社区
-              </el-button>
+        <div class="preview-section">
+          <div class="panel-header"><el-icon><VideoCamera /></el-icon> 预览</div>
+          <div class="preview-body">
+            <div v-if="videoUrl" class="video-player">
+              <video :src="videoUrl" controls autoplay loop class="preview-video" />
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <el-button :type="savedToGallery ? 'warning' : 'default'" size="small" round @click="handleSaveToGallery">
+                  <el-icon><StarFilled v-if="savedToGallery" /><Star v-else /></el-icon>
+                  {{ savedToGallery ? '已收藏' : '收藏' }}
+                </el-button>
+                <el-button size="small" type="success" round @click="openPublishDialog">
+                  <el-icon><Upload /></el-icon> 发布到社区
+                </el-button>
+              </div>
+            </div>
+            <div v-else class="preview-empty">
+              <el-icon :size="48"><VideoCamera /></el-icon>
+              <p>生成动画后将在此处预览</p>
             </div>
           </div>
-          <div v-else class="preview-empty">
-            <el-icon :size="48"><VideoCamera /></el-icon>
-            <p>生成动画后将在此处预览</p>
-          </div>
         </div>
-        <div v-if="logOutput" class="panel-log"><pre>{{ logOutput }}</pre></div>
+        <ParamPanel :code="code" @update:code="(v: string) => { code = v }" @render="handleRender" />
+        <TaskQueue @load-task="loadTaskFromQueue" />
+        <div v-if="logOutput" class="log-section">
+          <div class="panel-header"><el-icon><Document /></el-icon> 渲染日志</div>
+          <div class="log-body"><pre>{{ logOutput }}</pre></div>
+        </div>
       </div>
     </div>
 
@@ -678,7 +690,7 @@ onUnmounted(() => {
 
 /* 三栏画架布局 */
 .sb-panels {
-  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  display: grid; grid-template-columns: 1fr 1fr 1.6fr;
   gap: var(--space-md); height: calc(100vh - 220px);
   position: relative; z-index: 1;
 }
@@ -768,8 +780,18 @@ onUnmounted(() => {
 .code-panel-body { padding: 0; background: #161b22; }
 .code-panel-body :deep(.cm-editor) { background: #161b22; }
 
-/* 预览面板 — 画框 */
-.preview-body { display: flex; align-items: center; justify-content: center; flex-direction: column; }
+/* 预览面板 — 整体可滚动，各模块独立堆叠 */
+.panel-preview { overflow-y: auto; }
+.panel-preview .panel-header { flex-shrink: 0; }
+.preview-section { flex-shrink: 0; }
+.preview-body {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: var(--space-md);
+}
 .preview-video {
   max-width: 100%; max-height: 100%; border-radius: var(--radius-lg);
   animation: scale-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -779,8 +801,16 @@ onUnmounted(() => {
 .preview-empty { text-align: center; color: var(--text-tertiary); animation: fade-in 0.5s ease both; }
 .preview-empty .el-icon { margin-bottom: var(--space-md); opacity: 0.15; }
 .preview-empty p { font-size: 0.9rem; font-style: italic; }
-.panel-log { max-height: 140px; overflow-y: auto; padding: var(--space-sm) var(--space-md); background: rgba(0,0,0,0.2); border-top: 1px solid var(--border-color); }
-.panel-log pre { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-tertiary); white-space: pre-wrap; margin: 0; line-height: 1.5; }
+
+/* 日志区块 */
+.log-section { flex-shrink: 0; border-top: 1px solid var(--border-color); }
+.log-body {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(0,0,0,0.2);
+}
+.log-body pre { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-tertiary); white-space: pre-wrap; margin: 0; line-height: 1.5; }
 
 @keyframes scale-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

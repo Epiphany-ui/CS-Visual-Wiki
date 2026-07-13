@@ -28,21 +28,28 @@ if _miktex_env and os.path.isdir(_miktex_env) and _miktex_env not in os.environ[
 # ===================== 模型与 API 全局配置 =====================
 from dotenv import load_dotenv
 
-load_dotenv()
+# 延迟导入 Settings 避免循环依赖（模块级别通过函数获取）
+from services.config import settings as _cfg
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-if not DEEPSEEK_API_KEY:
-    raise RuntimeError("未设置环境变量 DEEPSEEK_API_KEY，请检查 .env 文件或系统环境变量")
+DEEPSEEK_API_KEY = None  # 延迟初始化，通过 _get_api_key() 获取
+CODER_MODEL_NAME = None
+OLLAMA_BASE_URL = None
+EMBEDDING_MODEL_NAME = None
 
-CODER_MODEL_NAME = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+def _init_config():
+    """延迟初始化配置（首次调用时从 settings 单例加载）"""
+    global DEEPSEEK_API_KEY, CODER_MODEL_NAME, OLLAMA_BASE_URL, EMBEDDING_MODEL_NAME
+    if DEEPSEEK_API_KEY is not None:
+        return
+    DEEPSEEK_API_KEY = _cfg.deepseek_api_key
+    CODER_MODEL_NAME = _cfg.deepseek_model_name
+    OLLAMA_BASE_URL = _cfg.ollama_base_url
+    EMBEDDING_MODEL_NAME = _cfg.embedding_model_name
+
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 LLM_TEMPERATURE: float = 0.1
 LLM_TOP_P: float = 0.85
-API_REQUEST_TIMEOUT: tuple = (10, 120)  # (连接超时10s, 读取超时120s)
-
-# --- Ollama 本地服务 ---
-OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
+API_REQUEST_TIMEOUT: tuple = (10, 120)
 
 # ===================== 业务常量配置 =====================
 CHROMA_PERSIST_DIR: str = "chroma_db"
@@ -187,6 +194,7 @@ def save_to_cache(user_input: str, result: Dict):
 
 # ===================== DeepSeek API 统一封装（调试版）=====================
 def deepseek_chat_request(messages: List[Dict]) -> Tuple[bool, str]:
+    _init_config()
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}"

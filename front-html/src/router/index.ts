@@ -110,4 +110,10 @@ router.beforeEach((to) => {
   }
 })
 
+// 路由后置守卫：统一设置页面标题
+router.afterEach((to) => {
+  const title = to.meta.title as string
+  document.title = title ? `${title} - CS Visual Learn` : 'CS Visual Learn'
+})
+
 export default router

@@ -44,10 +44,24 @@ public class GalleryController {
                 "匿名用户";
             String authorAvatar = author != null ? author.getAvatar() : null;
             String createTime = w.getCreateTime() != null ? w.getCreateTime().toString() : null;
+            // Fork 来源信息
+            String sourceAuthorName = null;
+            Integer sourceAuthorId = null;
+            if (w.getSourceWorkId() != null) {
+                Work sourceWork = workService.getById(w.getSourceWorkId());
+                if (sourceWork != null) {
+                    User sourceAuthor = userService.getById(sourceWork.getUserId());
+                    if (sourceAuthor != null) {
+                        sourceAuthorName = sourceAuthor.getNickname() != null ? sourceAuthor.getNickname() : sourceAuthor.getUsername();
+                        sourceAuthorId = sourceAuthor.getId();
+                    }
+                }
+            }
             return new WorkListDTO(w.getId(), w.getUserId(), w.getCover(), w.getTitle(),
                     w.getDescription(), authorName, authorAvatar,
                     w.getLikeCount(), w.getViewCount(),
-                    w.getVideoPath(), createTime);
+                    w.getSourceWorkId(), sourceAuthorName, sourceAuthorId,
+                    w.getForkCount(), w.getVideoPath(), createTime);
         }).collect(Collectors.toList());
 
         Map<String, Object> data = new HashMap<>();
