@@ -141,7 +141,7 @@ onUnmounted(() => {
       <h1 class="detail-title text-gradient">{{ detail.meta.title }}</h1>
 
       <!-- 词条正文 -->
-      <div ref="contentRef" class="detail-body" v-html="contentHtml"></div>
+      <div ref="contentRef" class="detail-body prose" v-html="contentHtml"></div>
 
       <!-- 浮动工具栏 -->
       <Teleport to="body">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import StatCard from '@/components/common/StatCard.vue'
 import RevealOnScroll from '@/components/common/RevealOnScroll.vue'
@@ -10,9 +10,48 @@ const inputRequirement = ref('')
 const heroReady = ref(false)
 const categoriesRef = ref<HTMLElement | null>(null)
 
+// ========== 胶卷轮播 — 从 API 加载真实封面 ==========
+const films = ref<any[]>([])
+const scrollPos = ref(0)
+const scrollSpeed = 0.4 // px/frame
+let filmTimer: ReturnType<typeof setInterval> | null = null
+const filmPaused = ref(false)
+const filmContainer = ref<HTMLElement | null>(null)
+
+async function loadFilms() {
+  try {
+    const res = await fetch('/api/videos/list?published=true&_=' + Date.now())
+    const data = await res.json()
+    const items = (data.data?.items || []).filter((v: any) => v.poster)
+    const baseUrl = import.meta.env.VITE_PYTHON_BASE || ''
+    // 补全 poster 的完整 URL
+    for (const v of items) {
+      if (v.poster && !v.poster.startsWith('http')) v.poster = baseUrl + v.poster
+    }
+    films.value = [...items, ...items]
+  } catch { /* ignore */ }
+}
+
+function startFilmScroll() {
+  stopFilmScroll()
+  filmTimer = setInterval(() => {
+    if (!filmPaused.value && films.value.length > 0) {
+      scrollPos.value += scrollSpeed
+      // 滚动过半时重置
+      const halfW = (films.value.length / 2) * 240
+      if (scrollPos.value >= halfW) scrollPos.value = 0
+    }
+  }, 16)
+}
+function stopFilmScroll() {
+  if (filmTimer) { clearInterval(filmTimer); filmTimer = null }
+}
+
 onMounted(() => {
   requestAnimationFrame(() => { heroReady.value = true })
+  loadFilms().then(() => startFilmScroll())
 })
+onUnmounted(() => { stopFilmScroll() })
 
 const categories = [
   { name: '算法', icon: 'Operation', color: '#7c3aed', desc: '排序、搜索、贪心...', path: '/wiki?category=algorithm' },
@@ -95,6 +134,32 @@ function scrollToExplore() {
       <div class="hero-scroll" @click="scrollToExplore">
         <span>探索更多</span>
         <el-icon :size="20"><ArrowDownBold /></el-icon>
+      </div>
+    </section>
+
+    <!-- 胶卷轮播 -->
+    <section class="section section-films" @mouseenter="filmPaused = true" @mouseleave="filmPaused = false">
+      <RevealOnScroll>
+        <div class="section-header">
+          <span class="section-subtitle">FEATURED SHOWCASE</span>
+          <h2 class="section-title gradient-title">精选动画作品</h2>
+        </div>
+      </RevealOnScroll>
+
+      <div ref="filmContainer" class="film-strip-wrap">
+        <div class="film-strip" :style="{ transform: `translateX(${-scrollPos}px)` }">
+          <div
+            v-for="(f, i) in films"
+            :key="f.filename + '-' + i"
+            class="film-frame"
+            @click="router.push(`/gallery/${f.filename}`)"
+          >
+            <img :src="f.poster" loading="lazy" class="film-cover" :alt="f.title" />
+            <div class="film-info">
+              <span class="film-title">{{ f.title }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -301,5 +366,336 @@ function scrollToExplore() {
   .hero-title { font-size: 2.2rem; }
   .category-grid { grid-template-columns: repeat(2, 1fr); }
   .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .showcase-title { font-size: 1.2rem; }
+  .carousel-thumbs { gap: 8px; }
+  .thumb-label { display: none; }
 }
+
+/* ====== 精选轮播 Framer 风格 ====== */
+.section-header {
+  text-align: center;
+  margin-bottom: var(--space-2xl);
+}
+.section-subtitle {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-wide);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-sm);
+}
+.section-header .section-title {
+  display: inline-block;
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-extrabold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tighter);
+}
+
+/* 轮播容器 */
+.featured-carousel {
+  position: relative;
+  max-width: 1060px;
+  margin: 0 auto;
+}
+
+/* 轮播视窗 */
+.carousel-viewport {
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* 轮播轨道（横向滑动） */
+.carousel-track {
+  display: flex;
+  transition: transform 0.8s cubic-bezier(0.77, 0, 0.175, 1);
+}
+.carousel-slide {
+  flex-shrink: 0;
+  width: 100%;
+}
+
+/* ====== 展示卡片 ====== */
+.showcase-card {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  cursor: pointer;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+/* 视觉预览区 */
+.showcase-visual {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.visual-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--card-gradient);
+  opacity: 0.9;
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.showcase-card:hover .visual-bg {
+  transform: scale(1.06);
+}
+.visual-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 500px;
+  height: 500px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 60%);
+  filter: blur(30px);
+  opacity: 0.7;
+}
+.visual-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 75%);
+}
+
+/* 预览视频 */
+.preview-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.preview-video.is-playing {
+  opacity: 1;
+}
+.visual-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(255, 255, 255, 0.85);
+  filter: drop-shadow(0 8px 32px rgba(0,0,0,0.4));
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.showcase-card:hover .visual-icon {
+  transform: translate(-50%, -50%) scale(1.1);
+  color: rgba(255, 255, 255, 1);
+}
+
+/* 播放按钮 */
+.play-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.showcase-card:hover .play-button {
+  opacity: 1;
+}
+.play-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  animation: play-pulse 2s ease-out infinite;
+}
+@keyframes play-pulse {
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+}
+.play-inner {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  transition: transform 0.3s ease;
+}
+.showcase-card:hover .play-inner {
+  transform: scale(1.1);
+}
+
+/* 角标 */
+.showcase-badge {
+  position: absolute;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.4);
+  color: white;
+}
+.badge-category {
+  top: 20px;
+  left: 20px;
+}
+.badge-duration {
+  top: 20px;
+  right: 20px;
+}
+.badge-duration .el-icon { font-size: 0.85rem; }
+
+/* 底部信息条 */
+.showcase-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  padding: 60px 28px 24px;
+  background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+.info-left { flex: 1; min-width: 0; }
+.showcase-title {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  color: white;
+  line-height: var(--lh-snug);
+  letter-spacing: var(--ls-tight);
+  margin-bottom: 4px;
+}
+.showcase-subtitle {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--font-mono);
+  letter-spacing: 0.03em;
+}
+.showcase-views {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.8);
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-full);
+}
+.showcase-views .el-icon { font-size: 0.9rem; }
+
+/* 切换按钮 */
+.carousel-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0;
+}
+.featured-carousel:hover .carousel-btn {
+  opacity: 1;
+}
+.carousel-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-50%) scale(1.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.carousel-btn-prev { left: 16px; }
+.carousel-btn-next { right: 16px; }
+
+/* 缩略图指示器 */
+.carousel-thumbs {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: var(--space-xl);
+}
+.thumb-item {
+  position: relative;
+  flex: 1;
+  max-width: 200px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0;
+  background: var(--bg-card);
+  transition: all 0.3s ease;
+  opacity: 0.5;
+}
+.thumb-item:hover {
+  opacity: 0.8;
+}
+.thumb-item.active {
+  opacity: 1;
+  border-color: var(--accent-purple);
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
+}
+.thumb-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--thumb-gradient);
+  opacity: 0.8;
+}
+.thumb-label {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: white;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  letter-spacing: 0.02em;
+}
+
+/* ====== 胶卷轮播 ====== */
+.section-films { padding: var(--space-2xl) 0; overflow: hidden; }
+.film-strip-wrap { position: relative; width: 100%; mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); }
+.film-strip { display: flex; gap: 18px; padding: 12px 0; will-change: transform; }
+.film-frame { flex-shrink: 0; width: 240px; cursor: pointer; border-radius: 12px; overflow: hidden; background: var(--bg-card); border: 2px solid var(--border-color); transition: all 0.3s ease; }
+.film-frame:hover { transform: translateY(-6px); border-color: var(--accent-purple); box-shadow: 0 12px 32px rgba(124,58,237,0.25); }
+.film-cover { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; }
+.film-info { padding: 10px 14px; }
+.film-title { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

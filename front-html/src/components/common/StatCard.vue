@@ -34,6 +34,9 @@ defineProps<{
 .stat-value {
   font-size: 2rem;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
   background: linear-gradient(135deg, var(--stat-color), color-mix(in srgb, var(--stat-color) 60%, white));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;

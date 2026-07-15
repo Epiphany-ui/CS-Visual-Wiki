@@ -123,6 +123,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===================== 通用工具函数 =====================
 def generate_embedding(text: str) -> List[float]:
+    _init_config()
     try:
         response = requests.post(
             url=f"{OLLAMA_BASE_URL}/api/embed",
