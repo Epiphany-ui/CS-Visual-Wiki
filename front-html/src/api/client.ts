@@ -2,8 +2,8 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 // 后端地址通过环境变量配置（生产环境可设为同域空字符串走 Nginx 反代）
-const JAVA_BASE = import.meta.env.VITE_JAVA_BASE ?? 'http://localhost:8080'
-const PYTHON_BASE = import.meta.env.VITE_PYTHON_BASE ?? 'http://localhost:8000'
+const JAVA_BASE = import.meta.env.VITE_JAVA_BASE ?? ''
+const PYTHON_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
 
 // Java 业务后端
 export const javaClient = axios.create({

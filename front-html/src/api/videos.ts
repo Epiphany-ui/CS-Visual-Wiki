@@ -2,7 +2,7 @@ import { pythonClient } from './client'
 import type { ApiResponse } from '@/types/api'
 import type { VideoFile, VideoMetadata, FrameInfo } from '@/types/task'
 
-const VIDEO_BASE = import.meta.env.VITE_PYTHON_BASE || 'http://localhost:8000'
+const VIDEO_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
 
 export const videosApi = {
   /** 获取视频列表。?published=true 仅返回已发布；?gallery=true 仅返回收藏 */

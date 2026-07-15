@@ -9,6 +9,8 @@ import AvatarIcon from '@/components/common/AvatarIcon.vue'
 import CountNumber from '@/components/common/CountNumber.vue'
 import { useCurrentUser } from '@/composables/useCurrentUser'
 
+const PY_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
+
 const userStore = useUserStore()
 const router = useRouter()
 const { username, avatar: avatarUrl, displayName, token, userKey, refresh } = useCurrentUser()
@@ -134,10 +136,10 @@ async function handleAvatarUpload(e: Event) {
   const form = new FormData()
   form.append('file', file)
   try {
-    const res = await fetch('http://localhost:8000/api/user/avatar', { method: 'POST', body: form })
+    const res = await fetch(`${PY_BASE}/api/user/avatar`, { method: 'POST', body: form })
     const data = await res.json()
     if (data.code === 0 && data.data?.url) {
-      const fullUrl = `http://localhost:8000${data.data.url}`
+      const fullUrl = `${PY_BASE}${data.data.url}`
       localStorage.setItem(userKey('avatar'), fullUrl)
       refresh() // 通知 composable 重新读取 localStorage
       ElMessage.success('头像已更新')

@@ -7,6 +7,8 @@ import { useCurrentUser } from '@/composables/useCurrentUser'
 import RevealOnScroll from '@/components/common/RevealOnScroll.vue'
 import AvatarIcon from '@/components/common/AvatarIcon.vue'
 
+const PY_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
+
 const route = useRoute()
 const router = useRouter()
 const { username } = useCurrentUser()
@@ -142,7 +144,7 @@ async function handleConvertGif() {
     const res = await videosApi.convertGif(filename)
     const data = res.data.data
     if (data) {
-      gifUrl.value = `http://localhost:8000${data.url}`
+      gifUrl.value = `${PY_BASE}${data.url}`
       ElMessage.success(`GIF 转换完成（${data.size_kb}KB）`)
     }
   } catch { /* handled */ }

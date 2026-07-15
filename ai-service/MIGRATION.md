@@ -84,9 +84,9 @@ Java `TaskServiceImpl` 仍可调用 `POST /generate`（自动映射到 `/api/gen
 ## 部署
 
 ```bash
-# Docker Compose 一键部署
+# 启动 AI 服务
 cd ai-service
-docker-compose up -d
+python main.py
 
 # 验证
 curl http://localhost:8000/health | jq .

@@ -8,6 +8,8 @@ import { useCurrentUser } from '@/composables/useCurrentUser'
 import type { TemplateDetail } from '@/types/template'
 import { ElMessage } from 'element-plus'
 
+const PY_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
+
 const route = useRoute()
 const router = useRouter()
 const { username } = useCurrentUser()
@@ -71,7 +73,7 @@ async function handleGenerate() {
     if (taskId) {
       connect(taskId, (data: any) => {
         if (data.type === 'done') { stopTplProgress(); progress.value = 100; generating.value = false; disconnect(); return }
-        if (data.video_path) videoUrl.value = `http://localhost:8000${data.video_path}`
+        if (data.video_path) videoUrl.value = `${PY_BASE}${data.video_path}`
         if (data.state === 'SUCCESS') { stopTplProgress(); progress.value = 100; generating.value = false; disconnect() }
         if (data.state === 'FAILURE') { stopTplProgress(); generating.value = false; disconnect(); ElMessage.error('渲染失败') }
       })
