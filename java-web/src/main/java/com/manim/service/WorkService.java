@@ -17,7 +17,7 @@ public interface WorkService {
 
     List<Work> listByUser(Integer userId, Integer status, Integer page, Integer size);
 
-    List<Work> listGallery(String rankType, String category, Integer page, Integer size);
+    List<Work> listGallery(String rankType, String sort, String category, Integer page, Integer size);
 
     List<Work> listHomeWorks(String type, Integer page, Integer size);
 
@@ -44,4 +44,13 @@ public interface WorkService {
 
     // Fork
     Integer forkWork(Integer workId, Integer userId);
+
+    // 删除作品（所有者校验）
+    void deleteWork(Integer workId, Integer userId);
+
+    // 切换公开/私有
+    void toggleVisibility(Integer workId, Integer userId);
+
+    // 更新标题和描述（所有者校验）
+    void updateWorkFields(Integer workId, Integer userId, String title, String description);
 }

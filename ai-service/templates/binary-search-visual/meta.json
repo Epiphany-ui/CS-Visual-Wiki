@@ -2,10 +2,15 @@
   "name": "二分查找可视化",
   "description": "展示二分查找算法在有序数组中的查找过程，直观看到搜索区间的不断缩小",
   "category": "算法",
-  "tags": ["二分查找", "搜索", "算法", "入门"],
+  "tags": [
+    "二分查找",
+    "搜索",
+    "算法",
+    "入门"
+  ],
   "difficulty": "入门",
   "cover": "",
-  "use_count": 0,
+  "use_count": 3,
   "params": [
     {
       "name": "array_size",

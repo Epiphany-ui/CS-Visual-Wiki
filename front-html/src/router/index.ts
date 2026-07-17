@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { ElMessage } from 'element-plus'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -68,13 +69,19 @@ const router = createRouter({
       path: '/study',
       name: 'study',
       component: () => import('@/views/Study/StudyPath.vue'),
-      meta: { title: '备考学习' },
+      meta: { title: '学习路径' },
     },
     {
       path: '/profile',
       name: 'profile',
       component: () => import('@/views/Profile.vue'),
       meta: { title: '个人中心', auth: true },
+    },
+    {
+      path: '/user/:userId',
+      name: 'user-profile',
+      component: () => import('@/views/UserProfile.vue'),
+      meta: { title: '用户主页' },
     },
     {
       path: '/:pathMatch(.*)*',
@@ -92,6 +99,7 @@ router.beforeEach((to) => {
   // 需要登录的页面 → 跳转登录页，携带目标地址
   if (to.meta.auth) {
     if (!userStore.isLoggedIn) {
+      ElMessage.warning('请先登录')
       return { name: 'login', query: { redirect: to.fullPath } }
     }
   }
@@ -100,6 +108,12 @@ router.beforeEach((to) => {
   if (to.meta.guest && userStore.isLoggedIn) {
     return { name: 'home' }
   }
+})
+
+// 路由后置守卫：统一设置页面标题
+router.afterEach((to) => {
+  const title = to.meta.title as string
+  document.title = title ? `${title} - CS Visual Learn` : 'CS Visual Learn'
 })
 
 export default router

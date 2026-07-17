@@ -1,16 +1,54 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
+import AvatarIcon from '@/components/common/AvatarIcon.vue'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const appStore = useAppStore()
+const { displayName, avatar: avatarUrl, token, refresh } = useCurrentUser()
 const searchKeyword = ref('')
 const searchFocused = ref(false)
 const themeSpinning = ref(false)
+
+function refreshProfile() {
+  // 由 useCurrentUser 的 refresh() 触发重新读取 localStorage
+  // displayName 和 avatarUrl 是 computed，会在 username 变化时自动更新。
+  // 此处保留函数签名供 watch 回调使用，实际数据已由 composable 管理。
+}
+
+// 从 Java 后端拉取最新头像/昵称（跨设备同步）
+async function pullProfileFromBackend() {
+  if (!token.value) return
+  try {
+    const res = await fetch('/api/v1/user/info', { headers: { 'Authorization': `Bearer ${token.value}` } })
+    if (!res.ok) return
+    const data = (await res.json()).data
+    const u = userStore.username || 'default'
+    if (data?.nickname) {
+      localStorage.setItem(`cs:nickname:${u}`, data.nickname)
+    }
+    if (data?.avatar) {
+      localStorage.setItem(`cs:avatar:${u}`, data.avatar)
+    }
+    refresh() // 触发 composable 重新读取 localStorage
+  } catch { /* ignore */ }
+}
+// 登录后自动从 Java 后端同步最新资料
+if (userStore.isLoggedIn) pullProfileFromBackend()
+
+// 从 Profile 页返回时自动刷新头像和昵称
+watch(() => route.fullPath, () => refresh())
+// 登录/登出时自动同步
+watch(() => userStore.isLoggedIn, (loggedIn) => {
+  if (loggedIn) { refresh(); pullProfileFromBackend() }
+  // 登出时 displayName/avatarUrl 会自动因 username 变为空而更新，无需手动赋值
+})
 
 function handleSearch() {
   if (searchKeyword.value.trim()) {
@@ -53,7 +91,7 @@ function handleLogout() {
           <el-icon><User /></el-icon> 社区
         </router-link>
         <router-link to="/study" class="nav-link" active-class="nav-active">
-          <el-icon><School /></el-icon> 备考
+          <el-icon><Guide /></el-icon> 学习路径
         </router-link>
       </nav>
 
@@ -87,8 +125,8 @@ function handleLogout() {
         <template v-if="userStore.isLoggedIn">
           <el-dropdown trigger="click">
             <div class="user-avatar">
-              <el-avatar :size="32" :icon="'UserFilled'" />
-              <span class="username">{{ userStore.username }}</span>
+              <AvatarIcon :name="displayName" :size="32" :avatar-url="avatarUrl" />
+              <span class="username">{{ displayName }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>

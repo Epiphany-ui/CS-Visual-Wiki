@@ -25,9 +25,6 @@ ai-service/
 ├── ai_engine.py             # 🔴 核心引擎 — 代码生成/渲染/修复/RAG/缓存（禁止修改）
 ├── main.py                  # FastAPI 入口 — 23 个 REST 接口
 ├── build_kb.py              # 知识库构建脚本（kb_data + wiki_data 双源）
-├── Dockerfile               # Docker 镜像
-├── docker-compose.yml       # 一键部署编排
-├── .dockerignore
 ├── requirements.txt         # Python 依赖
 ├── .env / .env.example      # 环境变量（API Key 等）
 │
@@ -132,9 +129,6 @@ python main.py
 # 异步 Worker（需 Redis，Windows 加 -P solo）
 redis-server &
 celery -A workers.celery_app worker --loglevel=info -P solo
-
-# 或一键 Docker 部署
-docker compose up -d
 ```
 
 ## 核心工作原理

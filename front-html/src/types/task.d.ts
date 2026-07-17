@@ -13,6 +13,7 @@ export interface VideoFile {
   size_mb: number
   created_at: string
   url: string
+  poster?: string
 }
 
 // 视频元数据（调试用）

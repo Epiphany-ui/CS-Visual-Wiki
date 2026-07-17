@@ -27,7 +27,8 @@ export function useSSE() {
   }
 
   function _doConnect(taskId: string, onMessage: SSECallback, onError?: (err: Event) => void) {
-    const url = `http://localhost:8000/api/tasks/${taskId}/stream`
+    const baseUrl = import.meta.env.VITE_PYTHON_BASE ?? ''
+    const url = `${baseUrl}/api/tasks/${taskId}/stream`
     eventSource = new EventSource(url)
 
     eventSource.onmessage = (event) => {

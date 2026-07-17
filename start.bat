@@ -15,7 +15,7 @@ REM --- 1. Redis ---
 echo [1/3] Redis...
 "%REDIS_CLI%" ping >nul 2>&1
 if %errorlevel% equ 0 goto redis_ok
-start "Redis" "%REDIS_EXE%"
+start "Redis" "%REDIS_EXE%" "%ROOT%ai-service\redis.conf"
 timeout /t 2 /nobreak >nul
 echo   Redis started (port 6379)
 goto redis_done

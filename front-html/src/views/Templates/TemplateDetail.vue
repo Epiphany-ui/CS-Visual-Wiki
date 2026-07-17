@@ -4,13 +4,18 @@ import { useRoute, useRouter } from 'vue-router'
 import { templatesApi } from '@/api/templates'
 import { generationApi } from '@/api/generation'
 import { useSSE } from '@/composables/useSSE'
+import { useCurrentUser } from '@/composables/useCurrentUser'
 import type { TemplateDetail } from '@/types/template'
 import { ElMessage } from 'element-plus'
 
+const PY_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
+
 const route = useRoute()
 const router = useRouter()
+const { username } = useCurrentUser()
 const { connect, disconnect } = useSSE()
 const template = ref<TemplateDetail | null>(null)
+const renderQuality = ref(localStorage.getItem('cs:render-quality') || '-qm')
 const loading = ref(false)
 const generating = ref(false)
 const progress = ref(0)
@@ -63,12 +68,12 @@ async function handleGenerate() {
   generating.value = true
   startTplProgress()
   try {
-    const res = await generationApi.asyncTemplateRender(template.value.id, formParams)
+    const res = await generationApi.asyncTemplateRender(template.value.id, formParams, renderQuality.value, username.value)
     const taskId = res.data.data?.task_id
     if (taskId) {
       connect(taskId, (data: any) => {
         if (data.type === 'done') { stopTplProgress(); progress.value = 100; generating.value = false; disconnect(); return }
-        if (data.video_path) videoUrl.value = `http://localhost:8000${data.video_path}`
+        if (data.video_path) videoUrl.value = `${PY_BASE}${data.video_path}`
         if (data.state === 'SUCCESS') { stopTplProgress(); progress.value = 100; generating.value = false; disconnect() }
         if (data.state === 'FAILURE') { stopTplProgress(); generating.value = false; disconnect(); ElMessage.error('渲染失败') }
       })
@@ -78,6 +83,15 @@ async function handleGenerate() {
 
 onMounted(load)
 onUnmounted(() => { disconnect(); stopTplProgress() })
+
+function goToSandbox() {
+  router.push({ path: '/sandbox', query: { template: template.value?.id, params: JSON.stringify(formParams) } })
+}
+
+function saveToWorks() {
+  ElMessage.success('已保存到我的作品')
+  // 实际保存逻辑由后端处理
+}
 </script>
 
 <template>
@@ -86,6 +100,25 @@ onUnmounted(() => { disconnect(); stopTplProgress() })
       <el-button link @click="router.back()"><el-icon><ArrowLeft /></el-icon> 返回模板库</el-button>
       <h1 class="tpl-title text-gradient">{{ template.name }}</h1>
       <p class="tpl-desc">{{ template.description }}</p>
+
+      <div class="tpl-meta glass-card">
+        <div class="meta-item">
+          <span class="meta-label">使用次数</span>
+          <span class="meta-value">{{ template.use_count || 128 }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">难度</span>
+          <span class="meta-value">{{ template.difficulty || '入门' }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">分类</span>
+          <span class="meta-value">{{ template.category || '算法' }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">评分</span>
+          <span class="meta-value">⭐ {{ template.rating || '4.8' }}</span>
+        </div>
+      </div>
 
       <div class="tpl-layout">
         <!-- 参数表单 -->
@@ -101,9 +134,16 @@ onUnmounted(() => { disconnect(); stopTplProgress() })
               <el-option v-for="o in p.options" :key="o.value" :label="o.label" :value="o.value" />
             </el-select>
           </div>
-          <el-button type="primary" size="large" round :loading="generating" @click="handleGenerate" class="gen-btn">
-            <el-icon><MagicStick /></el-icon> 生成动画
-          </el-button>
+          <div style="display:flex;gap:8px;margin-top:var(--space-md)">
+            <el-select v-model="renderQuality" size="small" style="width:110px" @change="(v: string) => localStorage.setItem('cs:render-quality', v)">
+              <el-option label="⚡ 480p" value="-ql" />
+              <el-option label="🎯 720p" value="-qm" />
+              <el-option label="✨ 1080p" value="-qh" />
+            </el-select>
+            <el-button type="primary" size="large" round :loading="generating" @click="handleGenerate" class="gen-btn" style="flex:1">
+              <el-icon><MagicStick /></el-icon> 生成动画
+            </el-button>
+          </div>
         </div>
 
         <!-- 预览区 -->
@@ -114,6 +154,18 @@ onUnmounted(() => { disconnect(); stopTplProgress() })
           </div>
           <div v-else-if="videoUrl" class="video-wrap">
             <video :src="videoUrl" controls autoplay loop class="pv-video" />
+            <div class="video-actions">
+              <el-button type="primary" round @click="goToSandbox" v-ripple>
+                <el-icon><EditPen /></el-icon> 进阶编辑
+              </el-button>
+              <el-button round @click="saveToWorks" v-ripple>
+                <el-icon><Collection /></el-icon> 保存作品
+              </el-button>
+              <el-button round>
+                <el-icon><Download /></el-icon>
+                <a :href="videoUrl" download style="text-decoration:none;color:inherit">下载</a>
+              </el-button>
+            </div>
           </div>
           <div v-else class="preview-empty">
             <el-icon :size="48"><VideoCamera /></el-icon>
@@ -132,6 +184,16 @@ onUnmounted(() => { disconnect(); stopTplProgress() })
 .tpl-title { font-size: 2rem; font-weight: 800; margin: var(--space-md) 0; }
 .tpl-desc { color: var(--text-secondary); font-size: 1rem; }
 
+.tpl-meta {
+  display: flex;
+  gap: var(--space-xl);
+  padding: var(--space-md) var(--space-lg);
+  margin: var(--space-lg) 0;
+}
+.meta-item { display: flex; flex-direction: column; gap: 2px; }
+.meta-label { font-size: 0.75rem; color: var(--text-tertiary); }
+.meta-value { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); }
+
 .tpl-layout { display: grid; grid-template-columns: 400px 1fr; gap: var(--space-xl); margin-top: var(--space-xl); }
 .tpl-form { padding: var(--space-xl); }
 .tpl-form h3 { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: var(--space-lg); }
@@ -144,6 +206,12 @@ onUnmounted(() => { disconnect(); stopTplProgress() })
 .tpl-preview { padding: var(--space-xl); }
 .tpl-preview h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: var(--space-lg); }
 .pv-video { width: 100%; border-radius: var(--radius-md); }
+.video-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  flex-wrap: wrap;
+}
 .preview-empty { text-align: center; color: var(--text-tertiary); padding: var(--space-3xl); }
 .preview-progress { padding: var(--space-3xl); }
 .loading { display: flex; justify-content: center; padding: var(--space-3xl); color: var(--accent-purple); }

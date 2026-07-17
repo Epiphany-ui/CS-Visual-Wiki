@@ -6,6 +6,7 @@
 配合 Celery Worker + SSE 端点使用，为前端提供"渲染中→完成"的实时反馈。
 """
 import json
+import sys
 import time
 from datetime import datetime
 from typing import Optional, Dict, List
@@ -123,6 +124,8 @@ def list_videos() -> list:
     videos = []
     for f in sorted(video_dir.glob("*.mp4"), key=lambda x: x.stat().st_mtime, reverse=True):
         stat = f.stat()
+        poster_name = f"{f.stem}.jpg"
+        poster_path = video_dir / poster_name
         videos.append({
             "filename": f.name,
             "task_id": f.stem,
@@ -130,25 +133,44 @@ def list_videos() -> list:
             "size_mb": round(stat.st_size / (1024 * 1024), 2),
             "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
             "url": f"/videos/{f.name}",
+            "poster": f"/videos/{poster_name}" if poster_path.exists() else "",
         })
     return videos
 
 
 def delete_video(filename: str) -> bool:
-    """删除指定视频文件及对应的代码文件"""
+    """删除指定视频文件、代码文件、缩略图，并清理 Redis 相关数据"""
     from pathlib import Path
 
     base = Path(__file__).resolve().parent.parent / "outputs"
     video_path = base / "videos" / filename
     code_path = base / "code" / f"{Path(filename).stem}.py"
+    poster_path = base / "videos" / f"{Path(filename).stem}.jpg"
 
+    # 1) 删除磁盘文件
     deleted = False
-    if video_path.exists():
-        video_path.unlink()
-        deleted = True
-    if code_path.exists():
-        code_path.unlink()
-        deleted = True
+    for p in (video_path, code_path, poster_path):
+        if p.exists():
+            p.unlink()
+            deleted = True
+
+    # 2) 清理 Redis：画廊收藏 + 用户作品 + 元数据
+    try:
+        r = _get_redis()
+        r.srem(GALLERY_KEY, filename)
+        # 从所有用户的 user-works 中删除
+        meta_key = f"{VIDEO_META_PREFIX}:{filename}"
+        meta = r.hgetall(meta_key) or {}
+        username = meta.get("username", "")
+        if isinstance(username, bytes):
+            username = username.decode("utf-8")
+        if username and username != "匿名":
+            r.srem(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
+        r.delete(meta_key)
+        _maybe_bgsave()
+    except Exception:
+        pass
+
     return deleted
 
 
@@ -158,17 +180,67 @@ VIDEO_META_PREFIX = "cs:video"  # Redis Hash: 视频元数据 {filename} → {ti
 
 
 def save_video_meta(filename: str, title: str = "", username: str = ""):
-    """保存视频元数据（标题、创建时间、发布者）"""
+    """保存视频元数据（标题、创建时间、发布者）
+    永久持久化，不设 TTL，避免用户作品数据意外过期丢失。
+    """
     try:
         r = _get_redis()
         key = f"{VIDEO_META_PREFIX}:{filename}"
         r.hset(key, "title", title or filename)
         r.hset(key, "created_at", datetime.now().isoformat())
         r.hset(key, "username", username or "匿名")
-        r.expire(key, 86400 * 30)  # 30 天过期
+        r.hset(key, "published", "0")  # 默认未发布到画廊
+        # 同步加入用户作品列表（服务端持久化）
+        if username and username != "匿名":
+            r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
         _maybe_bgsave()
     except Exception:
         pass
+
+
+def set_video_published(filename: str, published: bool = True):
+    """设置视频的发布状态"""
+    try:
+        r = _get_redis()
+        key = f"{VIDEO_META_PREFIX}:{filename}"
+        r.hset(key, "published", "1" if published else "0")
+        _maybe_bgsave()
+    except Exception:
+        pass
+
+
+def is_video_published(filename: str) -> bool:
+    """检查视频是否已发布到画廊"""
+    try:
+        r = _get_redis()
+        key = f"{VIDEO_META_PREFIX}:{filename}"
+        val = r.hget(key, "published") or b"0"
+        return val == "1" if isinstance(val, str) else val == b"1"
+    except Exception:
+        return False
+
+
+def add_to_user_works(username: str, filename: str) -> bool:
+    """将视频加入用户的作品列表（服务端持久化，跨浏览器/设备同步）
+    永久存储，不设 TTL。
+    """
+    try:
+        r = _get_redis()
+        r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
+        # 永久存储，不再设置 90 天 TTL
+        _maybe_bgsave()
+        return True
+    except Exception:
+        return False
+
+
+def get_user_works(username: str) -> set:
+    """获取用户的作品文件名列表"""
+    try:
+        r = _get_redis()
+        return r.smembers(f"{VIDEO_META_PREFIX}:user-works:{username}") or set()
+    except Exception:
+        return set()
 
 
 def get_video_meta(filename: str) -> dict:
@@ -190,10 +262,15 @@ def get_all_video_metas() -> dict:
         while True:
             cursor, keys = r.scan(cursor, match=f"{VIDEO_META_PREFIX}:*", count=200)
             for key in keys:
-                # decode_responses=True 时 key 已是 str，兼容 bytes
                 ks = key.decode("utf-8") if isinstance(key, bytes) else key
+                # 跳过 user-works Set 键（它们不是 Hash，hgetall 会抛 WRONGTYPE）
+                if ":user-works:" in ks:
+                    continue
                 fname = ks.replace(f"{VIDEO_META_PREFIX}:", "")
-                result[fname] = r.hgetall(key) or {}
+                try:
+                    result[fname] = r.hgetall(key) or {}
+                except Exception:
+                    continue  # 跳过类型不匹配的键
             if cursor == 0:
                 break
         return result
@@ -208,9 +285,9 @@ def update_video_title(filename: str, new_title: str) -> bool:
         key = f"{VIDEO_META_PREFIX}:{filename}"
         if r.exists(key):
             r.hset(key, "title", new_title)
-            return True
-        # 如果元数据不存在，创建
-        save_video_meta(filename, title=new_title)
+        else:
+            # 如果元数据不存在，创建
+            save_video_meta(filename, title=new_title)
         _maybe_bgsave()
         return True
     except Exception:
@@ -219,50 +296,62 @@ def update_video_title(filename: str, new_title: str) -> bool:
 
 # ===================== 画廊收藏管理 =====================
 
-GALLERY_KEY = "cs:gallery"  # Redis Set: 已收藏的视频文件名
+GALLERY_KEY = "cs:gallery"  # Redis Set: 已收藏的视频文件名（全局，向后兼容）
+
+def _gallery_key(username: str = "") -> str:
+    """per-user 画廊 key，未登录用户回退到全局 key"""
+    return f"cs:gallery:{username}" if username else GALLERY_KEY
 
 
 def _maybe_bgsave():
-    """在关键写入后手动触发 BGSAVE（Windows 上禁用自动 save 以避免断连 Celery）"""
+    """在关键写入后手动触发持久化。
+    Windows 用 SAVE（同步），Linux/Mac 用 BGSAVE（异步 fork）。
+    """
     try:
         r = _get_redis()
-        r.bgsave()
+        if sys.platform == "win32":
+            r.save()
+        else:
+            r.bgsave()
     except Exception:
         pass
 
 
-def save_to_gallery(filename: str) -> bool:
+def save_to_gallery(filename: str, username: str = "") -> bool:
     """
     Toggle 收藏状态：已收藏则取消，未收藏则添加。
+    username 为空时使用全局 key（向后兼容）。
     返回操作后的状态 (True=已收藏, False=已取消)。
     """
     try:
         r = _get_redis()
-        if r.sismember(GALLERY_KEY, filename):
-            r.srem(GALLERY_KEY, filename)
+        key = _gallery_key(username)
+        if r.sismember(key, filename):
+            r.srem(key, filename)
+            _maybe_bgsave()
             return False
         else:
-            r.sadd(GALLERY_KEY, filename)
+            r.sadd(key, filename)
             _maybe_bgsave()
             return True
     except Exception:
         return False
 
 
-def is_in_gallery(filename: str) -> bool:
+def is_in_gallery(filename: str, username: str = "") -> bool:
     """检查视频是否已收藏"""
     try:
         r = _get_redis()
-        return bool(r.sismember(GALLERY_KEY, filename))
+        return bool(r.sismember(_gallery_key(username), filename))
     except Exception:
         return False
 
 
-def get_gallery_filenames() -> set:
-    """获取所有已收藏的视频文件名"""
+def get_gallery_filenames(username: str = "") -> set:
+    """获取用户已收藏的视频文件名"""
     try:
         r = _get_redis()
-        return r.smembers(GALLERY_KEY) or set()
+        return r.smembers(_gallery_key(username)) or set()
     except Exception:
         return set()
 
@@ -321,12 +410,32 @@ def list_tasks(
     }
 
 
+def mark_task_cancelled(task_id: str):
+    """标记任务为已取消（Redis 标记，Celery worker 轮询检查）"""
+    try:
+        r = _get_redis()
+        r.setex(f"{TASK_KEY_PREFIX}:{task_id}:cancelled", 300, "1")  # 5 分钟 TTL
+    except Exception:
+        pass
+
+
+def is_task_cancelled(task_id: str) -> bool:
+    """检查任务是否已被用户取消"""
+    try:
+        r = _get_redis()
+        return bool(r.exists(f"{TASK_KEY_PREFIX}:{task_id}:cancelled"))
+    except Exception:
+        return False
+
+
 def delete_task(task_id: str) -> bool:
-    """删除任务状态记录及相关 Redis / Celery 数据"""
+    """删除任务状态记录，标记取消，并尝试终止 Celery 任务"""
     r = _get_redis()
     key = f"{TASK_KEY_PREFIX}:{task_id}"
     existed = r.exists(key)
     r.delete(key)
+    # 标记取消（Celery worker 会在关键步骤检查此标记）
+    mark_task_cancelled(task_id)
 
     try:
         from workers.celery_app import celery_app

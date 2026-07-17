@@ -21,6 +21,7 @@ export const tasksApi = {
 
   /** 获取 SSE 进度流 URL */
   getTaskStreamUrl(taskId: string): string {
-    return `http://localhost:8000/api/tasks/${taskId}/stream`
+    const baseUrl = import.meta.env.VITE_PYTHON_BASE ?? ''
+    return `${baseUrl}/api/tasks/${taskId}/stream`
   },
 }

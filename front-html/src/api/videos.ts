@@ -2,19 +2,34 @@ import { pythonClient } from './client'
 import type { ApiResponse } from '@/types/api'
 import type { VideoFile, VideoMetadata, FrameInfo } from '@/types/task'
 
-const VIDEO_BASE = 'http://localhost:8000'
+const VIDEO_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
 
 export const videosApi = {
-  /** 获取视频列表。?gallery=true 时仅返回已收藏到画廊的视频 */
-  getList(gallery = false) {
+  /** 获取视频列表。?published=true 仅返回已发布；?gallery=true 仅返回收藏 */
+  getList(gallery = false, username = '', published = false) {
     const params: Record<string, any> = { _: Date.now() }
-    if (gallery) params.gallery = true
+    if (gallery) { params.gallery = true; if (username) params.username = username }
+    if (published) params.published = true
     return pythonClient.get<ApiResponse<{ items: VideoFile[]; total: number }>>('/api/videos/list', { params })
   },
 
+  /** 发布视频到画廊 */
+  publishVideo(filename: string, username?: string) {
+    return pythonClient.post<ApiResponse<{ filename: string; published: boolean }>>(`/api/videos/${filename}/publish`, null, {
+      params: username ? { username } : {},
+    })
+  },
+
+  /** 切换公开/私有 */
+  togglePublic(filename: string) {
+    return pythonClient.post<ApiResponse<{ filename: string; published: boolean }>>(`/api/videos/${filename}/toggle-public`)
+  },
+
   /** Toggle 画廊收藏：已收藏则取消，未收藏则添加 */
-  saveVideo(filename: string) {
-    return pythonClient.post<ApiResponse<{ filename: string; saved: boolean }>>(`/api/videos/${filename}/save`)
+  saveVideo(filename: string, username = '') {
+    const params: Record<string, any> = {}
+    if (username) params.username = username
+    return pythonClient.post<ApiResponse<{ filename: string; saved: boolean }>>(`/api/videos/${filename}/save`, null, { params })
   },
 
   /** 下载视频 */
@@ -38,6 +53,25 @@ export const videosApi = {
   renameVideo(filename: string, title: string) {
     return pythonClient.patch<ApiResponse<{ filename: string; title: string }>>(`/api/videos/${filename}/title`, null, {
       params: { title },
+    })
+  },
+
+  /** 获取缩略图 URL（API 懒生成 + 缓存） */
+  getThumbnailUrl(filename: string): string {
+    return `${VIDEO_BASE}/api/videos/${filename}/thumbnail`
+  },
+
+  /** 获取用户作品列表（服务端） */
+  getMyWorks(username: string) {
+    return pythonClient.get<ApiResponse<{ items: VideoFile[]; total: number }>>('/api/videos/list', {
+      params: { my_works: true, username, _: Date.now() },
+    })
+  },
+
+  /** 同步本地作品列表到服务端 */
+  async syncMyWorks(username: string, filenames: string[]) {
+    return pythonClient.post<ApiResponse<{ synced_count: number; total: number }>>('/api/user/works/sync', null, {
+      params: { username, works: filenames.join(',') },
     })
   },
 

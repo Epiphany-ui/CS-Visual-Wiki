@@ -12,7 +12,42 @@
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-tertiary: #64748b;
+  --text-disabled: rgba(148, 163, 184, 0.4);
   --text-inverse: #0a0a0f;
+
+  /* ========== 字号系统（7级阶梯，1.25比例） ========== */
+  --fs-display: 3rem;
+  --fs-h1: 2rem;
+  --fs-h2: 1.5rem;
+  --fs-h3: 1.25rem;
+  --fs-body: 1rem;
+  --fs-sm: 0.875rem;
+  --fs-xs: 0.75rem;
+
+  /* ========== 字重系统 ========== */
+  --fw-extrabold: 800;
+  --fw-bold: 700;
+  --fw-semibold: 600;
+  --fw-medium: 500;
+  --fw-regular: 400;
+
+  /* ========== 行高系统 ========== */
+  --lh-tight: 1.15;
+  --lh-snug: 1.3;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.65;
+  --lh-loose: 1.8;
+
+  /* ========== 字间距 ========== */
+  --ls-tighter: -0.03em;
+  --ls-tight: -0.01em;
+  --ls-normal: 0;
+  --ls-wide: 0.05em;
+
+  /* 字体 */
+  --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --font-display: 'Inter', 'PingFang SC', sans-serif;
 
   /* 强调色 - 渐变紫蓝青 */
   --accent-purple: #7c3aed;

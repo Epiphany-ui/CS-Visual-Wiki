@@ -120,6 +120,21 @@ public class WorkController {
 
     // ==================== 7.7 创作者主页 ====================
 
+    @Operation(summary = "根据用户名获取用户公开信息")
+    @GetMapping("/user/info-by-username")
+    public Result<Map<String, Object>> getUserInfoByUsername(@RequestParam("username") String username) {
+        User user = userService.findByUsername(username);
+        if (user == null) throw new BusinessException("用户不存在");
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("userId", user.getId());
+        data.put("username", user.getUsername());
+        data.put("nickname", user.getNickname());
+        data.put("avatar", user.getAvatar());
+        data.put("intro", user.getIntro());
+        return Result.success(data);
+    }
+
     @Operation(summary = "获取创作者主页数据")
     @GetMapping("/user/author/home")
     public Result<Map<String, Object>> getAuthorHome(@RequestParam("authorId") Integer authorId) {
@@ -134,6 +149,7 @@ public class WorkController {
         Map<String, Object> data = new HashMap<>();
         Map<String, Object> authorInfo = new HashMap<>();
         authorInfo.put("userId", author.getId());
+        authorInfo.put("username", author.getUsername());
         authorInfo.put("nickname", author.getNickname());
         authorInfo.put("avatar", author.getAvatar());
         authorInfo.put("intro", author.getIntro());
@@ -154,6 +170,41 @@ public class WorkController {
         Integer userId = getCurrentUserId();
         if (userId.equals(authorId)) throw new BusinessException("不能关注自己");
         userFollowService.toggleFollow(userId, authorId, isFollow);
+        return Result.success();
+    }
+
+    // ==================== 7.9 删除作品 ====================
+
+    @Operation(summary = "删除自己的作品")
+    @DeleteMapping("/work/{workId}")
+    public Result<Void> deleteWork(@PathVariable Integer workId) {
+        Integer userId = getCurrentUserId();
+        workService.deleteWork(workId, userId);
+        return Result.success();
+    }
+
+    // ==================== 7.10 切换作品可见性 ====================
+
+    @Operation(summary = "切换作品公开/私有状态")
+    @PutMapping("/work/{workId}/visibility")
+    public Result<Void> toggleVisibility(@PathVariable Integer workId) {
+        Integer userId = getCurrentUserId();
+        workService.toggleVisibility(workId, userId);
+        return Result.success();
+    }
+
+    // ==================== 7.11 更新作品信息 ====================
+
+    @Operation(summary = "更新作品标题和描述")
+    @PutMapping("/work/{workId}")
+    public Result<Void> updateWork(@PathVariable Integer workId,
+                                    @RequestParam(value = "title", required = false) String title,
+                                    @RequestParam(value = "description", required = false) String description) {
+        if ((title == null || title.trim().isEmpty()) && (description == null || description.trim().isEmpty())) {
+            throw new BusinessException("至少需要提供标题或描述");
+        }
+        Integer userId = getCurrentUserId();
+        workService.updateWorkFields(workId, userId, title, description);
         return Result.success();
     }
 }

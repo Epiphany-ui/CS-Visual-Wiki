@@ -1,17 +1,21 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-// Java 业务后端 (port 8080)
+// 后端地址通过环境变量配置（生产环境可设为同域空字符串走 Nginx 反代）
+const JAVA_BASE = import.meta.env.VITE_JAVA_BASE ?? ''
+const PYTHON_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
+
+// Java 业务后端
 export const javaClient = axios.create({
-  baseURL: 'http://localhost:8080',
+  baseURL: JAVA_BASE,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Python AI 引擎 (port 8000)
+// Python AI 引擎
 export const pythonClient = axios.create({
-  baseURL: 'http://localhost:8000',
-  timeout: 120000, // 渲染可能需要 2 分钟
+  baseURL: PYTHON_BASE,
+  timeout: 120000,
   headers: { 'Content-Type': 'application/json' },
 })
 

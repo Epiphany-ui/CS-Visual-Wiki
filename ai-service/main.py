@@ -8,11 +8,12 @@ import asyncio
 import json
 import os
 import threading
+import uuid
 import time as _time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +32,7 @@ from ai_engine import (
     render_manim_animation,
     fix_manim_code,
     rag_retrieve_references,
+    generate_video_poster,
     VIDEO_OUTPUT_SUBDIR,
     CODE_OUTPUT_SUBDIR,
 )
@@ -43,6 +45,13 @@ from services.progress_service import (
     list_videos, delete_video, list_tasks, delete_task, get_task_count,
     save_to_gallery, is_in_gallery, get_gallery_filenames,
     save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
+    add_to_user_works, get_user_works, mark_task_cancelled,
+    set_video_published, is_video_published,
+)
+from services.comment_service import (
+    toggle_like, is_liked, get_like_counts, check_user_likes,
+    increment_view, get_view_counts,
+    add_comment, get_comments, get_comment_count, like_comment,
 )
 from services.config import settings
 from services.exceptions import (
@@ -52,6 +61,7 @@ from services.middleware import (
     RequestIDMiddleware, RequestLoggingMiddleware,
     ApiKeyMiddleware, RateLimitMiddleware,
 )
+from services.jwt_middleware import JwtUserMiddleware
 from services.code_validator import validate_code
 
 # ===================== FastAPI 应用初始化 =====================
@@ -70,7 +80,9 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(ApiKeyMiddleware)
 # 4. 速率限制
 app.add_middleware(RateLimitMiddleware)
-# 5. CORS 跨域配置（可配置化）
+# 5. JWT 用户身份注入（社区/用户端点从 request.state.username 获取身份）
+app.add_middleware(JwtUserMiddleware)
+# 6. CORS 跨域配置（可配置化）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -98,6 +110,11 @@ FRAME_CACHE_DIR = Path(__file__).resolve().parent / "outputs" / "frames"
 FRAME_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/frames", StaticFiles(directory=str(FRAME_CACHE_DIR)), name="frames")
 
+# 头像上传目录
+AVATAR_DIR = Path(__file__).resolve().parent / "outputs" / "avatars"
+AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/avatars", StaticFiles(directory=str(AVATAR_DIR)), name="avatars")
+
 # 服务器启动时间
 _START_TIME = _time.time()
 
@@ -122,10 +139,15 @@ async def startup_event():
         import redis as _redis_lib
         r = _redis_lib.Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=3)
         _project_dir = str(Path(__file__).resolve().parent)
-        r.config_set("dir", _project_dir)
-        r.config_set("stop-writes-on-bgsave-error", "no")
-        r.config_set("save", "")  # Windows 上禁用自动 BGSAVE（fork 会断连 Celery），改为手动触发
-        logger.info("[startup] Redis 配置已自动修复 (dir=%s)", _project_dir)
+        current_dir = r.config_get("dir").get("dir", "")
+        if current_dir != _project_dir:
+            logger.warning("[startup] Redis dir 不正确 (当前=%s, 期望=%s)，已自动修正", current_dir, _project_dir)
+            r.config_set("dir", _project_dir)
+            r.config_set("stop-writes-on-bgsave-error", "no")
+            r.config_set("save", "")  # Windows 上禁用自动 BGSAVE（fork 会断连 Celery），改为手动触发
+            # 立即保存，确保 dump.rdb 在正确位置
+            r.save()
+        logger.info("[startup] Redis 配置就绪 (dir=%s, dump.rdb=%s)", _project_dir, _project_dir + "/dump.rdb")
     except Exception as _e:
         logger.warning("[startup] 无法自动配置 Redis: %s（如 Redis 未安装请忽略）", _e)
 
@@ -149,6 +171,7 @@ class FixCodeRequest(BaseModel):
     """AI 修复代码"""
     code: str
     error_message: str
+    context: Optional[str] = None  # 原始需求描述，帮助 AI 理解用户意图
 
 class RetrieveRequest(BaseModel):
     """RAG 检索参考资料"""
@@ -329,9 +352,9 @@ async def api_render_code(req: RenderRequest):
 # ===================== 拆分接口：AI 修复代码 =====================
 @app.post("/api/ai/fix-code")
 async def api_fix_code(req: FixCodeRequest):
-    """根据报错信息，AI 自动修复代码"""
+    """根据报错信息和原始需求，AI 自动修复代码"""
     try:
-        success, result = fix_manim_code(req.code, req.error_message)
+        success, result = fix_manim_code(req.code, req.error_message, req.context)
         if not success:
             return error_response(result)
         return success_response({"code": result}, "代码修复完成")
@@ -496,6 +519,15 @@ def _parse_wiki_meta(file_path: Path) -> dict:
     except Exception:
         pass
     return meta
+
+
+@app.get("/api/code/{filename}")
+async def api_get_code(filename: str):
+    """获取生成的 Manim 源码文件"""
+    code_file = CODE_OUTPUT_SUBDIR / filename
+    if not code_file.exists():
+        raise HTTPException(status_code=404, detail="源码文件不存在")
+    return FileResponse(path=str(code_file), media_type="text/plain")
 
 
 @app.get("/api/wiki/categories")
@@ -753,37 +785,90 @@ async def api_task_stream(task_id: str):
 
 
 @app.get("/api/videos/list")
-async def api_videos_list(gallery: bool = False):
+async def api_videos_list(gallery: bool = False, my_works: bool = False, username: str = "", published: bool = False):
     """
     列出所有已生成的视频文件。
-    ?gallery=true 时仅返回已收藏到画廊的视频。
-    每条记录会合并视频元数据（标题等）。
+    ?published=true 时仅返回已发布到画廊的视频（默认 false 返回全部）。
+    ?gallery=true&username=xxx 时仅返回已收藏的视频。
+    ?my_works=true&username=xxx 时仅返回该用户的作品（包括私有）。
     """
     videos = list_videos()
     metas = get_all_video_metas()
-    # 合并元数据
     for v in videos:
         fn = v.get("filename", "")
         meta = metas.get(fn, {})
         v["title"] = (meta.get("title") or b"").decode("utf-8") if isinstance(meta.get("title"), bytes) else (meta.get("title") or fn)
         v["username"] = (meta.get("username") or b"").decode("utf-8") if isinstance(meta.get("username"), bytes) else (meta.get("username") or "匿名")
         v["created_by"] = v.get("username", "匿名")
+        v["published"] = (meta.get("published") or b"0").decode("utf-8") if isinstance(meta.get("published"), bytes) else (meta.get("published") or "0")
     if gallery:
-        saved = get_gallery_filenames()
+        saved = get_gallery_filenames(username)
         videos = [v for v in videos if v.get("filename") in saved]
+    if my_works and username:
+        works = get_user_works(username)
+        if works:
+            videos = [v for v in videos if v.get("filename") in works]
+        else:
+            videos = [v for v in videos if v.get("username") == username or v.get("created_by") == username]
+    if published:
+        videos = [v for v in videos if v.get("published") == "1"]
     return success_response({"items": videos, "total": len(videos)})
 
 
 @app.post("/api/videos/{filename}/save")
-async def api_videos_save(filename: str):
+async def api_videos_save(filename: str, username: str = ""):
     """
     Toggle 画廊收藏：已收藏则取消，未收藏则添加。
+    同时加入用户作品列表 + 标记为已发布。
     返回 {saved: true/false}。
     """
     if not _is_safe_filename(filename):
         return error_response("非法文件名")
-    saved = save_to_gallery(filename)
+    saved = save_to_gallery(filename, username)
+    if saved and username:
+        add_to_user_works(username, filename)
+        set_video_published(filename, True)  # 收藏 = 发布到画廊
     return success_response({"filename": filename, "saved": saved}, "已收藏" if saved else "已取消收藏")
+
+
+@app.post("/api/videos/{filename}/publish")
+async def api_videos_publish(filename: str, username: str = ""):
+    """发布视频到画廊（公开可见）"""
+    if not _is_safe_filename(filename):
+        return error_response("非法文件名")
+    set_video_published(filename, True)
+    if username:
+        add_to_user_works(username, filename)
+    return success_response({"filename": filename, "published": True}, "已发布")
+
+
+@app.post("/api/videos/{filename}/toggle-public")
+async def api_videos_toggle_public(filename: str):
+    """切换视频的公开/私有状态"""
+    if not _is_safe_filename(filename):
+        return error_response("非法文件名")
+    current = is_video_published(filename)
+    set_video_published(filename, not current)
+    return success_response({"filename": filename, "published": not current}, "已设为公开" if not current else "已设为私有")
+
+
+@app.post("/api/user/works/sync")
+async def api_user_works_sync(username: str = "", works: str = ""):
+    """
+    将前端的本地作品列表同步到服务端 Redis。
+    POST body: { username: "xxx", works: "file1.mp4,file2.mp4" }
+    """
+    if not username:
+        return error_response("用户名不能为空")
+    filenames = [f.strip() for f in works.split(",") if f.strip().endswith(".mp4")]
+    for fn in filenames:
+        add_to_user_works(username, fn)
+    server_works = get_user_works(username)
+    return success_response({
+        "username": username,
+        "synced_count": len(filenames),
+        "total": len(server_works),
+    }, "同步完成")
 
 
 @app.patch("/api/videos/{filename}/title")
@@ -817,17 +902,44 @@ class AsyncGenerateRequest(BaseModel):
     requirement: str
     max_retry: int = 3
     context: Optional[str] = None
+    quality: Optional[str] = None  # -ql(480p) / -qm(720p) / -qh(1080p)
+    username: Optional[str] = None  # 视频所有者（用于"我的作品"）
 
 
 class AsyncRenderRequest(BaseModel):
     """异步渲染请求"""
     code: str
+    quality: Optional[str] = None
+    username: Optional[str] = None
+
+
+@app.post("/api/user/avatar")
+async def api_upload_avatar(file: UploadFile = File(...)):
+    """上传用户头像，返回可访问的 URL"""
+    ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    if file.content_type not in ALLOWED_TYPES:
+        return error_response("仅支持 JPG/PNG/GIF/WebP 格式")
+    # 限制 2MB
+    contents = await file.read()
+    if len(contents) > 2 * 1024 * 1024:
+        return error_response("头像文件不能超过 2MB")
+    # 用时间戳 + 原始扩展名生成文件名
+    ext = file.filename.split(".")[-1] if "." in (file.filename or "") else "png"
+    safe_ext = ext if ext.lower() in ("jpg", "jpeg", "png", "gif", "webp") else "png"
+    avatar_name = f"avatar_{int(_time.time())}_{uuid.uuid4().hex[:6]}.{safe_ext}"
+    avatar_path = AVATAR_DIR / avatar_name
+    with open(avatar_path, "wb") as f:
+        f.write(contents)
+    url = f"/avatars/{avatar_name}"
+    return success_response({"url": url}, "头像上传成功")
 
 
 class AsyncTemplateRequest(BaseModel):
     """异步模板渲染请求"""
     template_id: str
     params: dict = {}
+    quality: Optional[str] = None
+    username: Optional[str] = None
 
 
 @app.post("/api/async/generate")
@@ -838,7 +950,7 @@ async def api_async_generate(req: AsyncGenerateRequest):
     """
     try:
         from workers.celery_app import generate_full_task
-        task = generate_full_task.delay(req.requirement, req.max_retry)
+        task = generate_full_task.delay(req.requirement, req.max_retry, req.quality, req.username)
         logger.info("[async] generate task dispatched: %s", task.id)
         return success_response({"task_id": task.id}, "任务已提交")
     except Exception as e:
@@ -859,7 +971,7 @@ async def api_async_render(req: AsyncRenderRequest):
 
     try:
         from workers.celery_app import render_code_task
-        task = render_code_task.delay(req.code)
+        task = render_code_task.delay(req.code, req.quality, req.username)
         logger.info("[async] render task dispatched: %s", task.id)
         return success_response({
             "task_id": task.id,
@@ -877,7 +989,7 @@ async def api_async_template_render(req: AsyncTemplateRequest):
     """
     try:
         from workers.celery_app import render_template_task
-        task = render_template_task.delay(req.template_id, req.params)
+        task = render_template_task.delay(req.template_id, req.params, req.quality, req.username)
         logger.info("[async] template task dispatched: %s (template=%s)", task.id, req.template_id)
         return success_response({"task_id": task.id}, "模板渲染任务已提交")
     except Exception as e:
@@ -943,6 +1055,31 @@ async def api_videos_download(filename: str):
     )
 
 
+@app.get("/api/videos/{filename}/thumbnail")
+async def api_videos_thumbnail(filename: str):
+    """获取视频缩略图（不存在则用 ffmpeg 懒生成并缓存为 .jpg）"""
+    if not _is_safe_filename(filename):
+        return error_response("非法文件名")
+
+    stem = Path(filename).stem
+    poster_file = VIDEO_OUTPUT_SUBDIR / f"{stem}.jpg"
+    video_file = VIDEO_OUTPUT_SUBDIR / filename
+
+    if not video_file.exists() and not poster_file.exists():
+        return error_response(f"视频 {filename} 不存在")
+
+    # 缩略图不存在则即时生成
+    if not poster_file.exists():
+        generate_video_poster(filename)
+
+    if poster_file.exists():
+        return FileResponse(
+            path=str(poster_file),
+            media_type="image/jpeg",
+        )
+    return error_response("缩略图生成失败，请确认 ffmpeg 已安装")
+
+
 @app.post("/api/videos/{filename}/convert/gif")
 async def api_videos_convert_gif(filename: str, fps: int = 10, width: int = 480):
     """将视频转换为 GIF（需要 ffmpeg）"""
@@ -986,6 +1123,124 @@ async def api_videos_convert_gif(filename: str, fps: int = 10, width: int = 480)
         return error_response("未找到 ffmpeg，请先安装 ffmpeg")
     except subprocess.TimeoutExpired:
         return error_response("GIF 转换超时（60s）")
+
+
+# ===================== v1.0 社区互动 API（评论、点赞、浏览） =====================
+
+@app.post("/api/community/like/{work_id}")
+async def api_toggle_like(work_id: int, username: str = ""):
+    """Toggle 点赞"""
+    if not username:
+        return error_response("用户名不能为空")
+    result = toggle_like(work_id, username)
+    return success_response(result, "已点赞" if result["liked"] else "已取消")
+
+
+@app.get("/api/community/likes")
+async def api_get_likes(ids: str = ""):
+    """批量获取点赞数 ?ids=1,2,3"""
+    try:
+        work_ids = [int(x) for x in ids.split(",") if x.strip()]
+        counts = get_like_counts(work_ids)
+        return success_response({"counts": counts})
+    except Exception:
+        return error_response("参数格式错误")
+
+
+@app.get("/api/community/likes/check")
+async def api_check_likes(ids: str = "", username: str = ""):
+    """查询用户是否已点赞 ?ids=1,2,3&username=xxx"""
+    try:
+        work_ids = [int(x) for x in ids.split(",") if x.strip()]
+        liked = check_user_likes(work_ids, username)
+        return success_response({"liked": liked})
+    except Exception:
+        return error_response("参数格式错误")
+
+
+@app.get("/api/community/views")
+async def api_get_views(ids: str = ""):
+    """批量获取浏览量 & 递增"""
+    try:
+        work_ids = [int(x) for x in ids.split(",") if x.strip()]
+        counts = get_view_counts(work_ids)
+        return success_response({"counts": counts})
+    except Exception:
+        return error_response("参数格式错误")
+
+
+@app.post("/api/community/view/{work_id}")
+async def api_increment_view(work_id: int):
+    """递增浏览量（播放视频时调用）"""
+    count = increment_view(work_id)
+    return success_response({"count": count})
+
+
+@app.get("/api/community/comments/batch")
+async def api_get_comments_batch(ids: str = "", limit: int = 3):
+    """批量获取多个帖子的前 N 条评论 ?ids=1,2,3&limit=3"""
+    try:
+        work_ids = [int(x) for x in ids.split(",") if x.strip()]
+        result = {}
+        for wid in work_ids:
+            comments = get_comments(wid, limit=limit, sort_by="likes")
+            total = get_comment_count(wid)
+            result[str(wid)] = {"comments": comments, "total": total}
+        return success_response({"posts": result})
+    except Exception:
+        return error_response("参数格式错误")
+
+
+@app.get("/api/community/comments/{work_id}")
+async def api_get_comments(work_id: int, limit: int = 3, sort: str = "likes"):
+    """获取评论列表"""
+    comments = get_comments(work_id, limit=limit, sort_by=sort)
+    total = get_comment_count(work_id)
+    return success_response({"comments": comments, "total": total})
+
+
+@app.post("/api/community/comments/{work_id}")
+async def api_add_comment(work_id: int, username: str = "", text: str = "", avatar: str = "", user_id: str = ""):
+    """发表评论"""
+    if not username or not text:
+        return error_response("用户名和评论内容不能为空")
+    if len(text) > 500:
+        return error_response("评论不能超过500字")
+    comment = add_comment(work_id, username, text, avatar, user_id)
+    return success_response({"comment": comment}, "评论发表成功")
+
+
+@app.post("/api/community/comments/{work_id}/like/{comment_id}")
+async def api_like_comment(work_id: int, comment_id: str, username: str = ""):
+    """给评论点赞/取消点赞"""
+    result = like_comment(comment_id, work_id, username)
+    return success_response({"commentId": comment_id, "liked": result["liked"], "likes": result["likes"]})
+
+
+# ===================== v1.0 学习进度 API（跨设备同步） =====================
+
+@app.get("/api/study/progress")
+async def api_study_progress(username: str = ""):
+    """获取用户的学习进度"""
+    try:
+        r = _get_redis()
+        raw = r.get(f"cs:study:{username}") or "{}"
+        progress = json.loads(raw)
+        return success_response({"progress": progress})
+    except Exception:
+        return success_response({"progress": {}})
+
+
+@app.post("/api/study/progress")
+async def api_study_save_progress(username: str = "", progress: str = ""):
+    """保存用户的学习进度"""
+    try:
+        r = _get_redis()
+        r.set(f"cs:study:{username}", progress)
+        _maybe_bgsave()
+        return success_response({}, "保存成功")
+    except Exception:
+        return error_response("保存失败")
 
 
 # ===================== v1.0 逐帧调试 API =====================
@@ -1129,11 +1384,18 @@ if __name__ == "__main__":
         reload=True,
         reload_excludes=[
             "outputs/**",       # 渲染产物：Celery 写入代码/视频会触发重载
+            "outputs\\**",      # Windows 路径兼容
             "logs/**",          # 日志文件
+            "logs\\**",
             "chroma_db/**",     # 向量库：build_kb 会修改
+            "chroma_db\\**",
             "cache/**",         # 缓存目录
+            "cache\\**",
             "__pycache__/**",
-            "*.pyc",
-            "*.log",
+            "__pycache__\\**",
+            "**/*.pyc",
+            "**/*.log",
+            "media/**",         # Manim 渲染中间文件
+            "media\\**",
         ],
     )

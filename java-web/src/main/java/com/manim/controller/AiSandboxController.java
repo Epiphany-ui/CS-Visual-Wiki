@@ -143,7 +143,8 @@ public class AiSandboxController {
             @RequestParam(value = "tagList", required = false) String tagList,
             @RequestParam("isPublic") Boolean isPublic,
             @RequestParam("code") String code,
-            @RequestParam(value = "previewUrl", required = false) String previewUrl) {
+            @RequestParam(value = "previewUrl", required = false) String previewUrl,
+            @RequestParam(value = "sourceWorkId", required = false) Integer sourceWorkId) {
 
         if (workTitle == null || workTitle.trim().isEmpty())
             throw new BusinessException("workTitle 不能为空");
@@ -161,6 +162,9 @@ public class AiSandboxController {
         work.setManimCode(code);
         work.setVideoPath(previewUrl);
         work.setStatus(1);
+        if (sourceWorkId != null) {
+            work.setSourceWorkId(sourceWorkId);
+        }
         Integer workId = workService.saveWork(work);
 
         Map<String, Object> data = new HashMap<>();

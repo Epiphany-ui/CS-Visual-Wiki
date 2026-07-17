@@ -28,21 +28,28 @@ if _miktex_env and os.path.isdir(_miktex_env) and _miktex_env not in os.environ[
 # ===================== 模型与 API 全局配置 =====================
 from dotenv import load_dotenv
 
-load_dotenv()
+# 延迟导入 Settings 避免循环依赖（模块级别通过函数获取）
+from services.config import settings as _cfg
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-if not DEEPSEEK_API_KEY:
-    raise RuntimeError("未设置环境变量 DEEPSEEK_API_KEY，请检查 .env 文件或系统环境变量")
+DEEPSEEK_API_KEY = None  # 延迟初始化，通过 _get_api_key() 获取
+CODER_MODEL_NAME = None
+OLLAMA_BASE_URL = None
+EMBEDDING_MODEL_NAME = None
 
-CODER_MODEL_NAME = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+def _init_config():
+    """延迟初始化配置（首次调用时从 settings 单例加载）"""
+    global DEEPSEEK_API_KEY, CODER_MODEL_NAME, OLLAMA_BASE_URL, EMBEDDING_MODEL_NAME
+    if DEEPSEEK_API_KEY is not None:
+        return
+    DEEPSEEK_API_KEY = _cfg.deepseek_api_key
+    CODER_MODEL_NAME = _cfg.deepseek_model_name
+    OLLAMA_BASE_URL = _cfg.ollama_base_url
+    EMBEDDING_MODEL_NAME = _cfg.embedding_model_name
+
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 LLM_TEMPERATURE: float = 0.1
 LLM_TOP_P: float = 0.85
-API_REQUEST_TIMEOUT: tuple = (10, 120)  # (连接超时10s, 读取超时120s)
-
-# --- Ollama 本地服务 ---
-OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "nomic-embed-text")
+API_REQUEST_TIMEOUT: tuple = (10, 120)
 
 # ===================== 业务常量配置 =====================
 CHROMA_PERSIST_DIR: str = "chroma_db"
@@ -57,11 +64,39 @@ OUTPUT_DIR = BASE_DIR / "outputs"
 CODE_OUTPUT_SUBDIR = OUTPUT_DIR / "code"
 VIDEO_OUTPUT_SUBDIR = OUTPUT_DIR / "videos"
 CACHE_DIR = BASE_DIR / "cache"
+
+# 确保目录存在
+CODE_OUTPUT_SUBDIR.mkdir(parents=True, exist_ok=True)
+VIDEO_OUTPUT_SUBDIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def generate_video_poster(video_filename: str):
+    """用 ffmpeg 截取视频第 2 秒帧作为封面缩略图（.jpg）
+
+    此函数设计为在渲染成功后调用，失败静默（缩略图缺失不影响主流程）。
+    同时被 ai_engine.render_manim_animation 和 celery_app 异步任务复用。
+    """
+    if not video_filename:
+        return
+    try:
+        video_file = VIDEO_OUTPUT_SUBDIR / video_filename
+        poster_file = VIDEO_OUTPUT_SUBDIR / f"{Path(video_filename).stem}.jpg"
+        if not video_file.exists() or poster_file.exists():
+            return
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(video_file), "-ss", "2", "-vframes", "1",
+             "-q:v", "3", str(poster_file)],
+            capture_output=True, timeout=15,
+            encoding="utf-8", errors="replace",
+        )
+    except Exception:
+        pass  # 缩略图生成失败不影响主流程
 RENDER_QUALITY_FLAG: str = os.getenv("RENDER_QUALITY_FLAG", "-qm")
 RENDER_TIMEOUT: int = int(os.getenv("RENDER_TIMEOUT", "120"))
 
 CODE_BLOCK_PATTERN: str = r"```python\s*(.*?)\s*```|```\s*(.*?)\s*```"
-SCENE_CLASS_PATTERN: str = r"class\s+(\w+)\s*\(\s*Scene\s*\)"
+SCENE_CLASS_PATTERN: str = r"class\s+(\w+)\s*\(\s*\w*Scene\s*\w*\)"
 
 # 延迟导入 Prompt 服务，避免循环依赖和启动顺序问题
 _prompt_service = None
@@ -88,6 +123,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===================== 通用工具函数 =====================
 def generate_embedding(text: str) -> List[float]:
+    _init_config()
     try:
         response = requests.post(
             url=f"{OLLAMA_BASE_URL}/api/embed",
@@ -130,7 +166,18 @@ def get_cached_result(user_input: str) -> Optional[Dict]:
     if cache_file.exists():
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                cached = json.load(f)
+            # 验证缓存的视频文件是否仍然存在
+            vp = cached.get("video_path", "")
+            if vp:
+                vp_stem = vp.replace("/videos/", "")
+                video_file = VIDEO_OUTPUT_SUBDIR / vp_stem
+                if video_file.exists():
+                    return cached
+                else:
+                    # 视频已删除，缓存失效
+                    cache_file.unlink(missing_ok=True)
+            return None
         except Exception:
             return None
     return None
@@ -148,6 +195,7 @@ def save_to_cache(user_input: str, result: Dict):
 
 # ===================== DeepSeek API 统一封装（调试版）=====================
 def deepseek_chat_request(messages: List[Dict]) -> Tuple[bool, str]:
+    _init_config()
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}"
@@ -311,12 +359,13 @@ def preflight_code_check(code: str) -> Tuple[bool, str]:
     return True, ""
 
 
-def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool, str, str]:
+def render_manim_animation(code_str: str, progress_callback=None, quality: str = None) -> Tuple[bool, str, str]:
     """
     渲染 Manim 动画代码，返回 (成功, 日志, 视频路径)
     :param code_str: Manim Python 代码
     :param progress_callback: 可选进度回调，签名为 callback(state, message)
            state: 'started' | 'rendering' | 'success' | 'failed'
+    :param quality: 渲染质量 -ql(480p) / -qm(720p) / -qh(1080p)，默认使用环境变量
     """
     task_id = uuid.uuid4().hex[:8]
     code_file_path = CODE_OUTPUT_SUBDIR / f"{task_id}.py"
@@ -330,10 +379,11 @@ def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool,
         if not scene_name:
             return False, "❌ 渲染失败：代码中未找到继承Scene的场景类", ""
 
+        quality_flag = quality or RENDER_QUALITY_FLAG
         render_command = [
             sys.executable,
             "-m", "manim",
-            RENDER_QUALITY_FLAG,
+            quality_flag,
             str(code_file_path.absolute()),
             scene_name,
             "-o", str(video_output_path.absolute())
@@ -406,13 +456,22 @@ def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool,
 
         if process.returncode == 0 and video_output_path.exists():
             web_accessible_url = f"/videos/{task_id}.mp4"
+            generate_video_poster(f"{task_id}.mp4")
             if progress_callback:
                 progress_callback("success", web_accessible_url)
             return True, f"✅ 渲染成功\n{full_log}", web_accessible_url
         else:
+            # 常见崩溃码解析
+            crash_hints = {
+                3221225477: "（内存访问冲突，可能是数组越界或 None 对象）",
+                3221225725: "（C++ 运行时错误，可能是对象生命周期问题）",
+                3221225786: "（堆损坏，常见于 3D 场景的 OpenGL 资源冲突 → 试试将 ThreeDScene 改为 Scene）",
+            }
+            hint = crash_hints.get(process.returncode, "")
+            err_msg = f"❌ 渲染失败，进程返回码：{process.returncode}{hint}\n{full_log}"
             if progress_callback:
-                progress_callback("failed", f"进程返回码：{process.returncode}")
-            return False, f"❌ 渲染失败，进程返回码：{process.returncode}\n{full_log}", ""
+                progress_callback("failed", f"进程返回码：{process.returncode}{hint}")
+            return False, err_msg, ""
 
     except Exception as e:
         if progress_callback:
@@ -420,13 +479,19 @@ def render_manim_animation(code_str: str, progress_callback=None) -> Tuple[bool,
         return False, f"❌ 渲染执行异常：{str(e)}", ""
 
 
-def fix_manim_code(original_code: str, error_message: str) -> Tuple[bool, str]:
+def fix_manim_code(original_code: str, error_message: str, context: str = None) -> Tuple[bool, str]:
+    """AI 修复代码
+    :param original_code: 原始有错误的代码
+    :param error_message: 报错信息（Manim 渲染 stderr）
+    :param context: 用户原始需求描述（可选，帮助 AI 理解意图后做针对性修复）
+    """
     # 从外部 Prompt 模板文件加载 System Prompt（支持热重载，修改即生效）
     system_prompt = _get_prompt_service().render(
         "code_fix",
         error_message=error_message,
     )
-    user_prompt = f"请修复以下Manim代码：\n```python\n{original_code}\n```"
+    context_part = f"\n\n用户原始需求：{context}\n请根据需求理解用户意图，除了修复语法错误，如果需要调整动画参数、逻辑或展示方式才能满足需求，也请一并修改。" if context else ""
+    user_prompt = f"请修复以下Manim代码：\n```python\n{original_code}\n```{context_part}"
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -442,7 +507,7 @@ def fix_manim_code(original_code: str, error_message: str) -> Tuple[bool, str]:
     return True, fixed_code
 
 
-def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIMES, progress_callback=None) -> Dict:
+def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIMES, progress_callback=None, quality: str = None) -> Dict:
     result = {"success": False, "code": "", "video_path": "", "try_count": 0, "log": ""}
     current_code = ""
     all_logs = []
@@ -470,7 +535,7 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
         current_code = gen_result
         result["code"] = current_code
         _report("rendering", "代码生成完成，开始渲染动画...", 20)
-        render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback)
+        render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback, quality=quality)
         all_logs.append(f"第1次渲染：\n{render_log}")
 
         if render_success:
@@ -495,7 +560,7 @@ def run_full_pipeline(user_requirement: str, max_retry: int = DEFAULT_RETRY_TIME
             result["code"] = current_code
 
             _report("rendering", f"第{current_try}次渲染中...", 40 + retry_index * 20)
-            render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback)
+            render_success, render_log, video_path = render_manim_animation(current_code, progress_callback=progress_callback, quality=quality)
             all_logs.append(f"第{current_try}次渲染：\n{render_log}")
 
             if render_success:

@@ -31,7 +31,15 @@ public class AuthFilter implements Filter {
 
     private static final List<String> WHITELIST = Arrays.asList(
             "/api/v1/user/register",
-            "/api/v1/user/login"
+            "/api/v1/user/login",
+            "/api/v1/gallery/**",
+            "/api/v1/home/**",
+            "/api/v1/template/list",
+            "/api/v1/template/detail",
+            "/api/v1/knowledge/**",
+            "/api/v1/work/public/**",
+            "/api/v1/search/**",
+            "/api/v1/user/author/home"
     );
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
