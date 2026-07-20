@@ -32,7 +32,7 @@ onMounted(load)
   <div class="templates-page">
     <PageHeader title="模板库" description="零代码创作动画，选择模板填写参数即刻生成" icon="Tickets" />
 
-    <div class="template-grid" v-loading="loading">
+    <div class="template-grid stagger-cards" v-loading="loading">
       <RevealOnScroll v-for="t in items" :key="t.id" as-child>
       <div class="t-card glass-card" @click="goDetail(t.id)">
         <div class="t-category">{{ t.category }}</div>

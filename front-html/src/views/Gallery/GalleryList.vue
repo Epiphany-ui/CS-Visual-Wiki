@@ -213,7 +213,7 @@ watch(activeTab, (tab) => {
       <el-button size="small" @click="selectedFiles = new Set()">取消选择</el-button>
     </div>
 
-    <div class="gallery-grid" v-loading="loading">
+    <div class="gallery-grid stagger-cards" v-loading="loading">
       <div v-for="v in sortedVideos" :key="v.filename" class="g-card glass-card" v-tilt @click="router.push(`/gallery/${v.filename}`)">
         <div class="g-thumb">
           <el-checkbox

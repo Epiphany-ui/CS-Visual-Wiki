@@ -46,8 +46,9 @@
 
   /* 字体 */
   --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
+  --font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'STSong', 'SimSun', 'Georgia', serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  --font-display: 'Inter', 'PingFang SC', sans-serif;
+  --font-display: 'Noto Serif SC', 'Source Han Serif SC', 'Georgia', 'STSong', serif;
 
   /* 强调色 - 渐变紫蓝青 */
   --accent-purple: #7c3aed;

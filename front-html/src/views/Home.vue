@@ -87,7 +87,7 @@ function scrollToExplore() {
 
       <div class="hero-content" :class="{ ready: heroReady }">
         <!-- 标题：每个字独立动画 -->
-        <h1 class="hero-title">
+        <h1 class="hero-title spring-in">
           <span class="char-wrapper char-from-left" v-for="(ch, i) in '让抽象概念'" :key="'a'+i" :style="{ animationDelay: (0.1 + i * 0.06) + 's' }">{{ ch }}</span>
           <span class="char-wrapper char-bounce-in" style="animation-delay:0.7s">动</span>
           <span class="char-wrapper char-from-bottom" v-for="(ch, i) in '起来'" :key="'b'+i" :style="{ animationDelay: (0.75 + i * 0.08) + 's' }">{{ ch }}</span>
@@ -234,11 +234,12 @@ function scrollToExplore() {
 /* ====== Hero Content ====== */
 .hero-content { position: relative; z-index: 2; text-align: center; max-width: 860px; }
 
-/* 标题 — 字符拆分 */
+/* 标题 — 字符拆分（首页 Hero 保留黑体，大号宋体显得松散） */
 .hero-title {
   font-size: 4.5rem; font-weight: 950; line-height: 1.2; color: var(--text-primary);
   margin-bottom: var(--space-md); letter-spacing: -0.03em;
   display: flex; flex-wrap: wrap; justify-content: center; gap: 0;
+  font-family: var(--font-sans);
 }
 .char-wrapper {
   display: inline-block; opacity: 0;

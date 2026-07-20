@@ -1,0 +1,53 @@
+- generic [ref=f2e3]:
+  - banner [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - link "◆ CS Visual Learn" [ref=f2e6] [cursor=pointer]:
+        - /url: "#/"
+        - generic [ref=f2e7]: ◆
+        - generic [ref=f2e8]: CS Visual Learn
+      - navigation [ref=f2e9]:
+        - link [ref=f2e10] [cursor=pointer]:
+          - /url: "#/wiki"
+        - link [ref=f2e15] [cursor=pointer]:
+          - /url: "#/sandbox"
+        - link [ref=f2e19] [cursor=pointer]:
+          - /url: "#/templates"
+        - link [ref=f2e23] [cursor=pointer]:
+          - /url: "#/gallery"
+        - link [ref=f2e27] [cursor=pointer]:
+          - /url: "#/community"
+        - link [ref=f2e31] [cursor=pointer]:
+          - /url: "#/study"
+      - generic [ref=f2e36]:
+        - textbox "搜索知识点、动画、模板..." [ref=f2e44]
+        - button [ref=f2e45] [cursor=pointer]
+        - button "许治均的爸爸" [ref=f2e50] [cursor=pointer]
+  - main [ref=f2e53]
+  - contentinfo [ref=f2e54]:
+    - generic [ref=f2e55]:
+      - generic [ref=f2e56]:
+        - text: ◆ CS Visual Learn
+        - paragraph [ref=f2e57]: 让每一个抽象概念都有对应的直观动画，让知识看得见。
+      - generic [ref=f2e58]:
+        - generic [ref=f2e59]:
+          - heading "学习" [level=4] [ref=f2e60]
+          - link "知识百科" [ref=f2e61] [cursor=pointer]:
+            - /url: "#/wiki"
+          - link "模板库" [ref=f2e62] [cursor=pointer]:
+            - /url: "#/templates"
+          - link "备考路径" [ref=f2e63] [cursor=pointer]:
+            - /url: "#/study"
+        - generic [ref=f2e64]:
+          - heading "创作" [level=4] [ref=f2e65]
+          - link "动画沙箱" [ref=f2e66] [cursor=pointer]:
+            - /url: "#/sandbox"
+          - link "精选画廊" [ref=f2e67] [cursor=pointer]:
+            - /url: "#/gallery"
+          - link "社区" [ref=f2e68] [cursor=pointer]:
+            - /url: "#/community"
+        - generic [ref=f2e69]:
+          - heading "关于" [level=4] [ref=f2e70]
+          - generic [ref=f2e71]: 关于我们
+          - generic [ref=f2e72]: 帮助文档
+          - generic [ref=f2e73]: 反馈建议
+    - generic [ref=f2e74]: © 2026 CS Visual Learn. Powered by Manim + DeepSeek.

@@ -1,0 +1,307 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - link "◆ CS Visual Learn" [ref=e6] [cursor=pointer]:
+        - /url: "#/"
+        - generic [ref=e7]: ◆
+        - generic [ref=e8]: CS Visual Learn
+      - navigation [ref=e9]:
+        - link [ref=e10] [cursor=pointer]:
+          - /url: "#/wiki"
+        - link [ref=e15] [cursor=pointer]:
+          - /url: "#/sandbox"
+        - link [ref=e19] [cursor=pointer]:
+          - /url: "#/templates"
+        - link [ref=e23] [cursor=pointer]:
+          - /url: "#/gallery"
+        - link [ref=e27] [cursor=pointer]:
+          - /url: "#/community"
+        - link [ref=e31] [cursor=pointer]:
+          - /url: "#/study"
+      - generic [ref=e36]:
+        - textbox "搜索知识点、动画、模板..." [ref=e44]
+        - button [ref=e45] [cursor=pointer]
+        - button "许治均的爸爸" [ref=e50] [cursor=pointer]
+  - main [ref=e53]:
+    - generic [ref=e54]:
+      - generic [ref=e55]:
+        - generic [ref=e56]:
+          - heading "让 抽 象 概 念 动 起 来" [level=1] [ref=e57]:
+            - generic [ref=e58]: 让
+            - generic [ref=e59]: 抽
+            - generic [ref=e60]: 象
+            - generic [ref=e61]: 概
+            - generic [ref=e62]: 念
+            - generic [ref=e63]: 动
+            - generic [ref=e64]: 起
+            - generic [ref=e65]: 来
+          - paragraph [ref=e66]:
+            - generic [ref=e67]: 基于 AI 的可视化学习平台
+            - generic [ref=e68]: 输入知识点，即刻生成交互式数学动画
+          - generic [ref=e71]:
+            - textbox "例如：冒泡排序动画、傅里叶级数可视化..." [ref=e76]
+            - button [ref=e78] [cursor=pointer]
+          - generic [ref=e83]:
+            - generic [ref=e84]: 🔥 热门：
+            - generic [ref=e85] [cursor=pointer]: 快速排序
+            - generic [ref=e86] [cursor=pointer]: 二叉树遍历
+            - generic [ref=e87] [cursor=pointer]: 傅里叶变换
+            - generic [ref=e88] [cursor=pointer]: Dijkstra算法
+        - generic [ref=e89] [cursor=pointer]: 探索更多
+      - generic [ref=e94]:
+        - generic [ref=e96]:
+          - generic [ref=e97]: FEATURED SHOWCASE
+          - heading "精选动画作品" [level=2] [ref=e98]
+        - generic [ref=e100]:
+          - generic [ref=e192] [cursor=pointer]:
+            - img "傅里叶级数方波分解" [ref=e193]
+            - generic [ref=e194]: 傅里叶级数方波分解
+          - generic [ref=e196] [cursor=pointer]:
+            - img "傅里叶级数方波分解" [ref=e197]
+            - generic [ref=e198]: 傅里叶级数方波分解
+          - generic [ref=e200] [cursor=pointer]:
+            - img "链表插入删除节点的动画演示，展示指针操作" [ref=e201]
+            - generic [ref=e202]: 链表插入删除节点的动画演示，展示指针操作
+          - generic [ref=e204] [cursor=pointer]:
+            - img "一、定义 AVL树是一种自平衡的二叉搜索树（Binary Search Tree, BST），由苏联数学家Georgy Adelson-Velsky和Evgen" [ref=e205]
+            - generic [ref=e206]: 一、定义 AVL树是一种自平衡的二叉搜索树（Binary Search Tree, BST），由苏联数学家Georgy Adelson-Velsky和Evgen
+          - generic [ref=e208] [cursor=pointer]:
+            - img "LimitApproach 渲染" [ref=e209]
+            - generic [ref=e210]: LimitApproach 渲染
+          - generic [ref=e212] [cursor=pointer]:
+            - img "LimitApproach 渲染" [ref=e213]
+            - generic [ref=e214]: LimitApproach 渲染
+          - generic [ref=e216] [cursor=pointer]:
+            - img "HarmonicSeriesVisualization 渲染" [ref=e217]
+            - generic [ref=e218]: HarmonicSeriesVisualization 渲染
+          - generic [ref=e220] [cursor=pointer]:
+            - img "SVDVisualization 渲染" [ref=e221]
+            - generic [ref=e222]: SVDVisualization 渲染
+          - generic [ref=e224] [cursor=pointer]:
+            - img "二分查找可视化" [ref=e225]
+            - generic [ref=e226]: 二分查找可视化
+          - generic [ref=e228] [cursor=pointer]:
+            - img "单链表反转过程的逐步动画演示" [ref=e229]
+            - generic [ref=e230]: 单链表反转过程的逐步动画演示
+          - generic [ref=e232] [cursor=pointer]:
+            - img "InsertDeleteSequence 渲染" [ref=e233]
+            - generic [ref=e234]: InsertDeleteSequence 渲染
+          - generic [ref=e236] [cursor=pointer]:
+            - img "顺序表插入和删除操作的可视化动画" [ref=e237]
+            - generic [ref=e238]: 顺序表插入和删除操作的可视化动画
+          - generic [ref=e240] [cursor=pointer]:
+            - img "Dijkstra算法动画可视化" [ref=e241]
+            - generic [ref=e242]: Dijkstra算法动画可视化
+          - generic [ref=e244] [cursor=pointer]:
+            - img "QuickSortVisualization 渲染" [ref=e245]
+            - generic [ref=e246]: QuickSortVisualization 渲染
+          - generic [ref=e248] [cursor=pointer]:
+            - img "快速排序" [ref=e249]
+            - generic [ref=e250]: 快速排序
+          - generic [ref=e252] [cursor=pointer]:
+            - img "动画 107981" [ref=e253]
+            - generic [ref=e254]: 动画 107981
+          - generic [ref=e256] [cursor=pointer]:
+            - img "BipartiteMatching 渲染" [ref=e257]
+            - generic [ref=e258]: BipartiteMatching 渲染
+          - generic [ref=e260] [cursor=pointer]:
+            - img "AStarPathfinding 渲染" [ref=e261]
+            - generic [ref=e262]: AStarPathfinding 渲染
+          - generic [ref=e264] [cursor=pointer]:
+            - img "NormalDistributionScene 渲染" [ref=e265]
+            - generic [ref=e266]: NormalDistributionScene 渲染
+          - generic [ref=e268] [cursor=pointer]:
+            - img "SVDVisualization 渲染" [ref=e269]
+            - generic [ref=e270]: SVDVisualization 渲染
+          - generic [ref=e272] [cursor=pointer]:
+            - img "快速排序动画可视化" [ref=e273]
+            - generic [ref=e274]: 快速排序动画可视化
+          - generic [ref=e276] [cursor=pointer]:
+            - img "ZeroOneKnapsackDP 渲染" [ref=e277]
+            - generic [ref=e278]: ZeroOneKnapsackDP 渲染
+          - generic [ref=e280] [cursor=pointer]:
+            - img "LagrangeMultipliers 渲染" [ref=e281]
+            - generic [ref=e282]: LagrangeMultipliers 渲染
+          - generic [ref=e284] [cursor=pointer]:
+            - img "CentralLimitTheorem 渲染" [ref=e285]
+            - generic [ref=e286]: CentralLimitTheorem 渲染
+          - generic [ref=e288] [cursor=pointer]:
+            - img "DijkstraVisualization 渲染" [ref=e289]
+            - generic [ref=e290]: DijkstraVisualization 渲染
+          - generic [ref=e292] [cursor=pointer]:
+            - img "QuickSortVisualization 渲染" [ref=e293]
+            - generic [ref=e294]: QuickSortVisualization 渲染
+          - generic [ref=e296] [cursor=pointer]:
+            - img "QuickSortVisualization 渲染" [ref=e297]
+            - generic [ref=e298]: QuickSortVisualization 渲染
+          - generic [ref=e300] [cursor=pointer]:
+            - img "FourierTransformScene 渲染" [ref=e301]
+            - generic [ref=e302]: FourierTransformScene 渲染
+          - generic [ref=e304] [cursor=pointer]:
+            - img "FourierTransformScene 渲染" [ref=e305]
+            - generic [ref=e306]: FourierTransformScene 渲染
+          - generic [ref=e308] [cursor=pointer]:
+            - img "BinaryTreeTraversal 渲染" [ref=e309]
+            - generic [ref=e310]: BinaryTreeTraversal 渲染
+          - generic [ref=e312] [cursor=pointer]:
+            - img "FourierTransformScene 渲染" [ref=e313]
+            - generic [ref=e314]: FourierTransformScene 渲染
+          - generic [ref=e316] [cursor=pointer]:
+            - img "傅里叶级数方波分解" [ref=e317]
+            - generic [ref=e318]: 傅里叶级数方波分解
+          - generic [ref=e320] [cursor=pointer]:
+            - img "傅里叶级数方波分解" [ref=e321]
+            - generic [ref=e322]: 傅里叶级数方波分解
+          - generic [ref=e324] [cursor=pointer]:
+            - img "链表插入删除节点的动画演示，展示指针操作" [ref=e325]
+            - generic [ref=e326]: 链表插入删除节点的动画演示，展示指针操作
+          - generic [ref=e328] [cursor=pointer]:
+            - img "一、定义 AVL树是一种自平衡的二叉搜索树（Binary Search Tree, BST），由苏联数学家Georgy Adelson-Velsky和Evgen" [ref=e329]
+            - generic [ref=e330]: 一、定义 AVL树是一种自平衡的二叉搜索树（Binary Search Tree, BST），由苏联数学家Georgy Adelson-Velsky和Evgen
+          - generic [ref=e332] [cursor=pointer]:
+            - img "LimitApproach 渲染" [ref=e333]
+            - generic [ref=e334]: LimitApproach 渲染
+          - generic [ref=e336] [cursor=pointer]:
+            - img "LimitApproach 渲染" [ref=e337]
+            - generic [ref=e338]: LimitApproach 渲染
+          - generic [ref=e340] [cursor=pointer]:
+            - img "HarmonicSeriesVisualization 渲染" [ref=e341]
+            - generic [ref=e342]: HarmonicSeriesVisualization 渲染
+          - generic [ref=e344] [cursor=pointer]:
+            - img "SVDVisualization 渲染" [ref=e345]
+            - generic [ref=e346]: SVDVisualization 渲染
+          - generic [ref=e348] [cursor=pointer]:
+            - img "二分查找可视化" [ref=e349]
+            - generic [ref=e350]: 二分查找可视化
+          - generic [ref=e352] [cursor=pointer]:
+            - img "单链表反转过程的逐步动画演示" [ref=e353]
+            - generic [ref=e354]: 单链表反转过程的逐步动画演示
+          - generic [ref=e356] [cursor=pointer]:
+            - img "InsertDeleteSequence 渲染" [ref=e357]
+            - generic [ref=e358]: InsertDeleteSequence 渲染
+          - generic [ref=e360] [cursor=pointer]:
+            - img "顺序表插入和删除操作的可视化动画" [ref=e361]
+            - generic [ref=e362]: 顺序表插入和删除操作的可视化动画
+          - generic [ref=e364] [cursor=pointer]:
+            - img "Dijkstra算法动画可视化" [ref=e365]
+            - generic [ref=e366]: Dijkstra算法动画可视化
+          - generic [ref=e368] [cursor=pointer]:
+            - img "QuickSortVisualization 渲染" [ref=e369]
+            - generic [ref=e370]: QuickSortVisualization 渲染
+          - generic [ref=e372] [cursor=pointer]:
+            - img "快速排序" [ref=e373]
+            - generic [ref=e374]: 快速排序
+          - generic [ref=e376] [cursor=pointer]:
+            - img "动画 107981" [ref=e377]
+            - generic [ref=e378]: 动画 107981
+          - generic [ref=e380] [cursor=pointer]:
+            - img "BipartiteMatching 渲染" [ref=e381]
+            - generic [ref=e382]: BipartiteMatching 渲染
+          - generic [ref=e384] [cursor=pointer]:
+            - img "AStarPathfinding 渲染" [ref=e385]
+            - generic [ref=e386]: AStarPathfinding 渲染
+          - generic [ref=e388] [cursor=pointer]:
+            - img "NormalDistributionScene 渲染" [ref=e389]
+            - generic [ref=e390]: NormalDistributionScene 渲染
+          - generic [ref=e392] [cursor=pointer]:
+            - img "SVDVisualization 渲染" [ref=e393]
+            - generic [ref=e394]: SVDVisualization 渲染
+          - generic [ref=e396] [cursor=pointer]:
+            - img "快速排序动画可视化" [ref=e397]
+            - generic [ref=e398]: 快速排序动画可视化
+          - generic [ref=e400] [cursor=pointer]:
+            - img "ZeroOneKnapsackDP 渲染" [ref=e401]
+            - generic [ref=e402]: ZeroOneKnapsackDP 渲染
+          - generic [ref=e404] [cursor=pointer]:
+            - img "LagrangeMultipliers 渲染" [ref=e405]
+            - generic [ref=e406]: LagrangeMultipliers 渲染
+          - generic [ref=e408] [cursor=pointer]:
+            - img "CentralLimitTheorem 渲染" [ref=e409]
+            - generic [ref=e410]: CentralLimitTheorem 渲染
+          - generic [ref=e412] [cursor=pointer]:
+            - img "DijkstraVisualization 渲染" [ref=e413]
+            - generic [ref=e414]: DijkstraVisualization 渲染
+          - generic [ref=e416] [cursor=pointer]:
+            - img "QuickSortVisualization 渲染" [ref=e417]
+            - generic [ref=e418]: QuickSortVisualization 渲染
+          - generic [ref=e420] [cursor=pointer]:
+            - img "QuickSortVisualization 渲染" [ref=e421]
+            - generic [ref=e422]: QuickSortVisualization 渲染
+          - generic [ref=e424] [cursor=pointer]:
+            - img "FourierTransformScene 渲染" [ref=e425]
+            - generic [ref=e426]: FourierTransformScene 渲染
+          - generic [ref=e428] [cursor=pointer]:
+            - img "FourierTransformScene 渲染" [ref=e429]
+            - generic [ref=e430]: FourierTransformScene 渲染
+          - generic [ref=e432] [cursor=pointer]:
+            - img "BinaryTreeTraversal 渲染" [ref=e433]
+            - generic [ref=e434]: BinaryTreeTraversal 渲染
+          - generic [ref=e436] [cursor=pointer]:
+            - img "FourierTransformScene 渲染" [ref=e437]
+            - generic [ref=e438]: FourierTransformScene 渲染
+      - generic [ref=e101]:
+        - generic [ref=e102]:
+          - heading "探索知识领域" [level=2] [ref=e103]
+          - paragraph [ref=e104]: 从你最感兴趣的领域开始学习之旅
+        - generic [ref=e105]:
+          - generic [ref=e107] [cursor=pointer]:
+            - heading "算法" [level=3] [ref=e112]
+            - paragraph [ref=e113]: 排序、搜索、贪心...
+          - generic [ref=e115] [cursor=pointer]:
+            - heading "数据结构" [level=3] [ref=e120]
+            - paragraph [ref=e121]: 树、图、堆、哈希...
+          - generic [ref=e123] [cursor=pointer]:
+            - heading "高等数学" [level=3] [ref=e128]
+            - paragraph [ref=e129]: 微积分、级数、傅里叶...
+          - generic [ref=e131] [cursor=pointer]:
+            - heading "线性代数" [level=3] [ref=e136]
+            - paragraph [ref=e137]: 矩阵、特征值、SVD...
+          - generic [ref=e139] [cursor=pointer]:
+            - heading "概率论" [level=3] [ref=e145]
+            - paragraph [ref=e146]: 正态分布、贝叶斯...
+          - generic [ref=e148] [cursor=pointer]:
+            - heading "图论" [level=3] [ref=e153]
+            - paragraph [ref=e154]: 最短路径、生成树...
+      - generic [ref=e155]:
+        - heading "平台数据" [level=2] [ref=e157]
+        - generic [ref=e158]:
+          - generic [ref=e159]:
+            - generic [ref=e160]: 0+
+            - generic [ref=e161]: 知识词条
+          - generic [ref=e162]:
+            - generic [ref=e163]: 0+
+            - generic [ref=e164]: 动画模板
+          - generic [ref=e165]:
+            - generic [ref=e166]: ∞
+            - generic [ref=e167]: 已生成动画
+          - generic [ref=e168]:
+            - generic [ref=e169]: 0个
+            - generic [ref=e170]: 知识分类
+  - contentinfo [ref=e171]:
+    - generic [ref=e172]:
+      - generic [ref=e173]:
+        - text: ◆ CS Visual Learn
+        - paragraph [ref=e174]: 让每一个抽象概念都有对应的直观动画，让知识看得见。
+      - generic [ref=e175]:
+        - generic [ref=e176]:
+          - heading "学习" [level=4] [ref=e177]
+          - link "知识百科" [ref=e178] [cursor=pointer]:
+            - /url: "#/wiki"
+          - link "模板库" [ref=e179] [cursor=pointer]:
+            - /url: "#/templates"
+          - link "备考路径" [ref=e180] [cursor=pointer]:
+            - /url: "#/study"
+        - generic [ref=e181]:
+          - heading "创作" [level=4] [ref=e182]
+          - link "动画沙箱" [ref=e183] [cursor=pointer]:
+            - /url: "#/sandbox"
+          - link "精选画廊" [ref=e184] [cursor=pointer]:
+            - /url: "#/gallery"
+          - link "社区" [ref=e185] [cursor=pointer]:
+            - /url: "#/community"
+        - generic [ref=e186]:
+          - heading "关于" [level=4] [ref=e187]
+          - generic [ref=e188]: 关于我们
+          - generic [ref=e189]: 帮助文档
+          - generic [ref=e190]: 反馈建议
+    - generic [ref=e191]: © 2026 CS Visual Learn. Powered by Manim + DeepSeek.

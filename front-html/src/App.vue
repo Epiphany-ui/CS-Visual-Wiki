@@ -23,6 +23,7 @@ onMounted(() => {
 
 <template>
   <div class="app-layout">
+    <div class="bg-grid" />
     <AnimatedBackground :particle-count="12" />
     <CursorGlow />
     <AppHeader />

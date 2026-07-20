@@ -167,6 +167,22 @@ function handleLogout() {
   border-bottom: 1px solid var(--border-color);
   transition: background var(--transition-base);
 }
+.app-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient-primary);
+  opacity: 0.5;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.6s var(--ease-out-expo);
+}
+.app-header:hover::after {
+  transform: scaleX(1);
+}
 
 [data-theme="light"] .app-header {
   background: rgba(255, 255, 255, 0.85);
