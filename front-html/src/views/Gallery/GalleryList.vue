@@ -110,7 +110,21 @@ async function batchPublish() {
   loadAll()
 }
 
-const sortBy = ref<'time' | 'title' | 'size'>('time')
+const sortBy = ref<'time' | 'title' | 'size' | 'popular'>('time')
+
+async function applySort() {
+  if (sortBy.value === 'popular') {
+    // 收藏数排序走服务端
+    loading.value = true
+    try {
+      const res = await videosApi.getList(false, '', true, 'popular')
+      allVideos.value = res.data.data?.items || []
+    } finally { loading.value = false }
+  } else if (sortBy.value === 'time') {
+    // 默认排序重新加载
+    loadAll()
+  }
+}
 
 const sortedVideos = computed(() => {
   const arr = [...videos.value]
@@ -119,7 +133,7 @@ const sortedVideos = computed(() => {
   } else if (sortBy.value === 'size') {
     arr.sort((a, b) => b.size_bytes - a.size_bytes)
   }
-  // 'time' = default API order (newest first)
+  // 'time' 和 'popular' 已由服务端排序
   return arr
 })
 
@@ -183,8 +197,9 @@ watch(activeTab, (tab) => {
       <el-button :type="activeTab === 'stars' ? 'primary' : 'default'" round @click="switchTab('stars')">
         我的收藏 ({{ starsCount }})
       </el-button>
-      <el-select v-model="sortBy" size="small" style="width:140px" @change="() => {}">
+      <el-select v-model="sortBy" size="small" style="width:140px" @change="applySort">
         <el-option label="最新优先" value="time" />
+        <el-option label="最多收藏" value="popular" />
         <el-option label="标题 A-Z" value="title" />
         <el-option label="文件大小" value="size" />
       </el-select>
@@ -216,7 +231,7 @@ watch(activeTab, (tab) => {
         </div>
         <div class="g-info">
           <h4 :title="getTitle(v)">{{ getTitle(v) }}</h4>
-          <span class="g-size">{{ v.size_mb }} MB · {{ v.created_at?.slice(0, 10) }}</span>
+          <span class="g-size">{{ v.size_mb }} MB · {{ v.created_at?.slice(0, 10) }}<span v-if="(v as any).saved_count"> · ⭐ {{ (v as any).saved_count }} 收藏</span></span>
         </div>
       </div>
     </div>

@@ -76,13 +76,13 @@ function saveState() {
       progressMsg: progressMsg.value,
       activeTaskId: _activeTaskId,
     }
-    sessionStorage.setItem(STATE_KEY.value, JSON.stringify(state))
+    localStorage.setItem(STATE_KEY.value, JSON.stringify(state))
   } catch { /* ignore */ }
 }
 
 function restoreState() {
   try {
-    const raw = sessionStorage.getItem(STATE_KEY.value)
+    const raw = localStorage.getItem(STATE_KEY.value)
     if (!raw) return
     const state = JSON.parse(raw)
     requirement.value = state.requirement || ''
@@ -92,6 +92,9 @@ function restoreState() {
     currentFilename.value = state.currentFilename || ''
     savedToGallery.value = state.savedToGallery || false
     logOutput.value = state.logOutput || ''
+    _activeTaskId = state.activeTaskId || ''
+    progress.value = state.progress || 0
+    progressMsg.value = state.progressMsg || ''
   } catch { /* ignore */ }
 }
 
@@ -220,10 +223,10 @@ function restoreTaskFromSession() {
 
   // 从队列中找这个任务
   const cached = taskStore.queue.find(t => t.taskId === tid)
-  // 从 sessionStorage 恢复进度（比 Pinia store 更准确）
+  // 从 localStorage 恢复进度
   let savedProgress = 0
   try {
-    const raw = sessionStorage.getItem(STATE_KEY.value)
+    const raw = localStorage.getItem(STATE_KEY.value)
     if (raw) {
       const state = JSON.parse(raw)
       savedProgress = state.progress || 0
@@ -360,6 +363,10 @@ async function handlePublish() {
     const data = await res.json()
     if (data.code === 200) {
       publishDialogVisible.value = false
+      // 发布到社区 = 自动设为公开
+      if (currentFilename.value) {
+        videosApi.togglePublic(currentFilename.value).catch(() => {})
+      }
       // 如果勾选了发布到画廊，同步收藏
       if (publishToGallery.value && currentFilename.value) {
         videosApi.saveVideo(currentFilename.value, username.value).then(() => {
@@ -512,30 +519,41 @@ onMounted(() => {
   // 恢复任务队列
   taskStore.restore()
 
-  // Fork 过来的代码
+  // 先恢复上一次的沙箱状态
+  restoreState()
+  restoreTaskFromSession()
+
+  // Fork 过来的代码 → 覆盖 code
   const forkedCode = sessionStorage.getItem('cs:forked-code')
   if (forkedCode) {
     code.value = forkedCode
     sessionStorage.removeItem('cs:forked-code')
-    return
   }
 
-  const prompt = route.query.prompt as string
-  if (prompt) {
-    // 从百科/首页跳转过来 → 全新任务，自动开始生成
-    requirement.value = prompt
-    code.value = ''
+  // 从模板库"进阶编辑"跳转 → 已有代码，只需设置标题
+  if (route.query.template && forkedCode) {
+    requirement.value = `模板创作: ${route.query.template}`
     videoUrl.value = ''
     videoPath.value = ''
     currentFilename.value = ''
     logOutput.value = ''
     typingActive.value = false
     localStorage.removeItem('cs:active-task')
-    nextTick(() => handleGenerate())
+    // 不自动生成——用户先审查代码再手动渲染
   } else {
-    // 正常导航返回 → 恢复之前的状态
-    restoreState()
-    restoreTaskFromSession()
+    // 从百科/学习路径跳转过来 → 全新任务，自动开始生成
+    const prompt = route.query.prompt as string
+    if (prompt) {
+      requirement.value = prompt
+      code.value = ''
+      videoUrl.value = ''
+      videoPath.value = ''
+      currentFilename.value = ''
+      logOutput.value = ''
+      typingActive.value = false
+      localStorage.removeItem('cs:active-task')
+      nextTick(() => handleGenerate())
+    }
   }
 })
 
@@ -561,6 +579,14 @@ watch(
   }
 )
 
+// 自动保存：code、requirement、videoUrl 变化时即时持久化
+let _autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+function autoSave() {
+  if (_autoSaveTimer) clearTimeout(_autoSaveTimer)
+  _autoSaveTimer = setTimeout(() => saveState(), 500)
+}
+watch([code, requirement, videoUrl], autoSave)
+
 onUnmounted(() => {
   disconnect()
   stopSmoothProgress()
@@ -568,6 +594,7 @@ onUnmounted(() => {
     clearTimeout(_nextTaskTimer)
     _nextTaskTimer = null
   }
+  if (_autoSaveTimer) clearTimeout(_autoSaveTimer)
   saveState()
 })
 </script>

@@ -5,11 +5,12 @@ import type { VideoFile, VideoMetadata, FrameInfo } from '@/types/task'
 const VIDEO_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
 
 export const videosApi = {
-  /** 获取视频列表。?published=true 仅返回已发布；?gallery=true 仅返回收藏 */
-  getList(gallery = false, username = '', published = false) {
+  /** 获取视频列表。?published=true 仅返回已发布；?gallery=true 仅返回收藏；?sort=popular 按收藏数排序 */
+  getList(gallery = false, username = '', published = false, sort = '') {
     const params: Record<string, any> = { _: Date.now() }
     if (gallery) { params.gallery = true; if (username) params.username = username }
     if (published) params.published = true
+    if (sort) params.sort = sort
     return pythonClient.get<ApiResponse<{ items: VideoFile[]; total: number }>>('/api/videos/list', { params })
   },
 

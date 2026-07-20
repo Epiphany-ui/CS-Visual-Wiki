@@ -234,6 +234,17 @@ def add_to_user_works(username: str, filename: str) -> bool:
         return False
 
 
+def remove_from_user_works(username: str, filename: str) -> bool:
+    """从用户的作品列表中移除视频"""
+    try:
+        r = _get_redis()
+        r.srem(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
+        _maybe_bgsave()
+        return True
+    except Exception:
+        return False
+
+
 def get_user_works(username: str) -> set:
     """获取用户的作品文件名列表"""
     try:
@@ -317,6 +328,67 @@ def _maybe_bgsave():
         pass
 
 
+SAVE_COUNT_KEY = "cs:video:saved-count"  # Hash: filename → count
+
+def get_video_save_counts() -> dict:
+    """获取所有视频的收藏数 {filename: count}"""
+    try:
+        r = _get_redis()
+        raw = r.hgetall(SAVE_COUNT_KEY) or {}
+        counts = {}
+        for k, v in raw.items():
+            key = k.decode("utf-8") if isinstance(k, bytes) else k
+            val = int(v.decode("utf-8") if isinstance(v, bytes) else v)
+            counts[key] = val
+        return counts
+    except Exception:
+        return {}
+
+
+def backfill_save_counts():
+    """
+    回填历史收藏数：扫描所有 per-user gallery 集合，
+    统计每个视频被多少用户收藏，写入 SAVE_COUNT_KEY Hash。
+    仅在新部署或数据丢失时调用。
+    """
+    try:
+        r = _get_redis()
+        # 扫描所有 cs:gallery:* 键
+        counts: dict[str, int] = {}
+        cursor = 0
+        while True:
+            cursor, keys = r.scan(cursor=cursor, match="cs:gallery:*", count=200)
+            for key in keys:
+                # 跳过全局 key 和 save-count key
+                key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+                if key_str in (GALLERY_KEY, SAVE_COUNT_KEY):
+                    continue
+                filenames = r.smembers(key_str)
+                for fn_raw in filenames:
+                    fn = fn_raw.decode("utf-8") if isinstance(fn_raw, bytes) else fn_raw
+                    counts[fn] = counts.get(fn, 0) + 1
+            if cursor == 0:
+                break
+
+        if counts:
+            # 批量写入 Hash
+            pipe = r.pipeline()
+            for fn, cnt in counts.items():
+                pipe.hset(SAVE_COUNT_KEY, fn, cnt)
+            pipe.execute()
+            _maybe_bgsave()
+
+        from .logging_config import get_logger
+        logger = get_logger("progress")
+        logger.info(f"[backfill] 回填完成: {len(counts)} 个视频的收藏数")
+        return len(counts)
+    except Exception as e:
+        from .logging_config import get_logger
+        logger = get_logger("progress")
+        logger.warning(f"[backfill] 回填失败: {e}")
+        return 0
+
+
 def save_to_gallery(filename: str, username: str = "") -> bool:
     """
     Toggle 收藏状态：已收藏则取消，未收藏则添加。
@@ -328,10 +400,12 @@ def save_to_gallery(filename: str, username: str = "") -> bool:
         key = _gallery_key(username)
         if r.sismember(key, filename):
             r.srem(key, filename)
+            r.hincrby(SAVE_COUNT_KEY, filename, -1)
             _maybe_bgsave()
             return False
         else:
             r.sadd(key, filename)
+            r.hincrby(SAVE_COUNT_KEY, filename, 1)
             _maybe_bgsave()
             return True
     except Exception:

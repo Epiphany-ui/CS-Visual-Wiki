@@ -127,8 +127,17 @@ async function handleGenerate() {
 onMounted(load)
 onUnmounted(() => { disconnect(); stopTplProgress() })
 
-function goToSandbox() {
-  router.push({ path: '/sandbox', query: { template: template.value?.id, params: JSON.stringify(formParams) } })
+async function goToSandbox() {
+  if (!template.value) return
+  // 先生成模板代码，然后像 Fork 一样传递到沙箱
+  try {
+    const res = await templatesApi.generateCode(template.value.id, formParams)
+    const code = res.data.data?.code
+    if (code) {
+      sessionStorage.setItem('cs:forked-code', code)
+    }
+  } catch { /* 代码生成失败不阻塞，至少把参数带过去 */ }
+  router.push({ path: '/sandbox', query: { template: template.value.id, params: JSON.stringify(formParams) } })
 }
 
 function saveToWorks() {

@@ -11,15 +11,13 @@ const PY_BASE = import.meta.env.VITE_PYTHON_BASE ?? ''
 
 const route = useRoute()
 const router = useRouter()
-const { username } = useCurrentUser()
+const { username, token } = useCurrentUser()
 const filename = route.params.filename as string
 const videoUrl = videosApi.getPlayUrl(filename)
 const downloadUrl = videosApi.getDownloadUrl(filename)
 const converting = ref(false)
 const gifUrl = ref('')
 const saved = ref(false)
-const liked = ref(false)
-const likeCount = ref(Math.floor(Math.random() * 50) + 5)
 const videoTitle = ref('')
 const editingTitle = ref(false)
 const titleInput = ref('')
@@ -52,18 +50,11 @@ async function loadTitle() {
     const meta = items.find((v: any) => v.filename === filename)
     videoTitle.value = meta?.title || filename
     titleInput.value = videoTitle.value
-    videoOwner.value = meta?.username || meta?.created_by || ''
+    // 作者永远取服务端记录，不因当前登录用户而改变
+    videoOwner.value = meta?.username || meta?.created_by || '匿名'
     const curUser = username.value
-    if (curUser && videoOwner.value !== curUser) {
-      videosApi.getMyWorks(curUser).then(res => {
-        const myFiles = (res.data.data?.items || []).map((v: any) => v.filename)
-        if (myFiles.includes(filename)) {
-          videoOwner.value = curUser
-          isOwner.value = true
-        }
-      }).catch(() => {})
-    }
-    isOwner.value = !!curUser && videoOwner.value === curUser
+    // 判断是否为作者本人（或文件名与当前用户关联）
+    isOwner.value = !!curUser && (videoOwner.value === curUser)
     isPublished.value = (meta as any)?.published === '1'
     // 从服务端获取真实源码
     const taskId = filename.replace('.mp4', '')
@@ -96,27 +87,42 @@ async function checkSaved() {
   } catch { /* ignore */ }
 }
 
-// 点赞状态本地存储
-const likeKey = computed(() => `cs:likes:${username.value || 'anon'}`)
-function loadLikeStatus() {
+const publishing = ref(false)
+const publishDialogVisible = ref(false)
+const publishDesc = ref('')
+
+async function handlePublishToCommunity() {
+  if (!token.value) { ElMessage.warning('请先登录再发布'); return }
+  publishing.value = true
   try {
-    const likes = JSON.parse(localStorage.getItem(likeKey.value) || '[]')
-    liked.value = likes.includes(filename)
-  } catch { /* ignore */ }
-}
-function toggleLike() {
-  try {
-    let likes: string[] = JSON.parse(localStorage.getItem(likeKey.value) || '[]')
-    if (liked.value) {
-      likes = likes.filter(f => f !== filename)
-      likeCount.value--
+    const body = new URLSearchParams()
+    body.append('workTitle', videoTitle.value || filename)
+    body.append('workDesc', publishDesc.value)
+    body.append('isPublic', 'true')
+    body.append('code', sourceCode.value || '')
+    body.append('previewUrl', videoUrl || '')
+    const res = await fetch('/api/v1/work/publish', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.value}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    })
+    const data = await res.json()
+    if (data.code === 200) {
+      publishDialogVisible.value = false
+      // 发布到社区 = 自动设为公开
+      videosApi.togglePublic(filename).then(() => { isPublished.value = true }).catch(() => {})
+      ElMessage.success('已发布到社区！')
     } else {
-      likes.push(filename)
-      likeCount.value++
+      ElMessage.error(data.msg || data.message || '发布失败')
     }
-    localStorage.setItem(likeKey.value, JSON.stringify(likes))
-    liked.value = !liked.value
-  } catch { /* ignore */ }
+  } catch (e) {
+    ElMessage.error('发布失败：' + (e as Error).message)
+  } finally {
+    publishing.value = false
+  }
 }
 
 async function handleSave() {
@@ -286,7 +292,6 @@ onMounted(async () => {
   checkSaved()
   await loadTitle()
   loadWorkFromGallery()
-  loadLikeStatus()
 })
 </script>
 
@@ -326,13 +331,12 @@ onMounted(async () => {
         <RevealOnScroll :delay="120">
           <!-- 操作按钮 -->
           <div class="gd-actions">
-            <el-button round @click="toggleLike" :type="liked ? 'danger' : 'default'" v-ripple>
-              <el-icon><StarFilled v-if="liked" style="color:#f43f5e" /><Star v-else /></el-icon>
-              点赞 {{ likeCount }}
-            </el-button>
             <el-button round :type="saved ? 'warning' : 'default'" @click="handleSave" v-ripple>
               <el-icon><StarFilled v-if="saved" /><Star v-else /></el-icon>
               {{ saved ? '已收藏' : '收藏' }}
+            </el-button>
+            <el-button v-if="isOwner" round type="success" @click="publishDialogVisible = true" v-ripple>
+              <el-icon><Upload /></el-icon> 发布到社区
             </el-button>
             <el-button round type="primary" @click="handleFork" v-ripple>
               <el-icon><CopyDocument /></el-icon> Fork 改编
@@ -421,6 +425,15 @@ onMounted(async () => {
         </RevealOnScroll>
       </div>
     </div>
+
+    <!-- 发布到社区弹窗 -->
+    <el-dialog v-model="publishDialogVisible" title="发布到社区" width="480px">
+      <el-input v-model="publishDesc" type="textarea" :rows="4" placeholder="写一段描述介绍这个作品..." />
+      <template #footer>
+        <el-button @click="publishDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="publishing" @click="handlePublishToCommunity">发布</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 

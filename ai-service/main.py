@@ -46,7 +46,8 @@ from services.progress_service import (
     list_videos, delete_video, list_tasks, delete_task, get_task_count,
     save_to_gallery, is_in_gallery, get_gallery_filenames,
     save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
-    add_to_user_works, get_user_works, mark_task_cancelled,
+    add_to_user_works, remove_from_user_works, get_user_works, mark_task_cancelled,
+    backfill_save_counts,
     set_video_published, is_video_published, _get_redis, _maybe_bgsave,
 )
 from services.comment_service import (
@@ -151,6 +152,14 @@ async def startup_event():
         logger.info("[startup] Redis 配置就绪 (dir=%s, dump.rdb=%s)", _project_dir, _project_dir + "/dump.rdb")
     except Exception as _e:
         logger.warning("[startup] 无法自动配置 Redis: %s（如 Redis 未安装请忽略）", _e)
+
+    # 回填历史收藏数（首次运行或新部署时补全旧数据）
+    try:
+        backfilled = backfill_save_counts()
+        if backfilled > 0:
+            logger.info("[startup] 收藏数回填完成: %d 个视频", backfilled)
+    except Exception:
+        pass
 
 # ===================== 请求响应模型 =====================
 class GenerateRequest(BaseModel):
@@ -830,15 +839,18 @@ async def api_task_stream(task_id: str):
 
 
 @app.get("/api/videos/list")
-async def api_videos_list(gallery: bool = False, my_works: bool = False, username: str = "", published: bool = False):
+async def api_videos_list(gallery: bool = False, my_works: bool = False, username: str = "", published: bool = False, sort: str = "time"):
     """
     列出所有已生成的视频文件。
     ?published=true 时仅返回已发布到画廊的视频（默认 false 返回全部）。
     ?gallery=true&username=xxx 时仅返回已收藏的视频。
     ?my_works=true&username=xxx 时仅返回该用户的作品（包括私有）。
+    ?sort=time|popular 排序方式（默认 time=最新优先）。
     """
+    from services.progress_service import get_video_save_counts
     videos = list_videos()
     metas = get_all_video_metas()
+    save_counts = get_video_save_counts()
     for v in videos:
         fn = v.get("filename", "")
         meta = metas.get(fn, {})
@@ -846,6 +858,7 @@ async def api_videos_list(gallery: bool = False, my_works: bool = False, usernam
         v["username"] = (meta.get("username") or b"").decode("utf-8") if isinstance(meta.get("username"), bytes) else (meta.get("username") or "匿名")
         v["created_by"] = v.get("username", "匿名")
         v["published"] = (meta.get("published") or b"0").decode("utf-8") if isinstance(meta.get("published"), bytes) else (meta.get("published") or "0")
+        v["saved_count"] = save_counts.get(fn, 0)
     if gallery:
         saved = get_gallery_filenames(username)
         videos = [v for v in videos if v.get("filename") in saved]
@@ -857,6 +870,10 @@ async def api_videos_list(gallery: bool = False, my_works: bool = False, usernam
             videos = [v for v in videos if v.get("username") == username or v.get("created_by") == username]
     if published:
         videos = [v for v in videos if v.get("published") == "1"]
+    # 排序
+    if sort == "popular":
+        videos.sort(key=lambda v: v.get("saved_count", 0), reverse=True)
+    # 默认按文件时间倒序（已在 list_videos 中按 mtime 排序）
     return success_response({"items": videos, "total": len(videos)})
 
 
@@ -871,8 +888,14 @@ async def api_videos_save(filename: str, username: str = ""):
         return error_response("非法文件名")
     saved = save_to_gallery(filename, username)
     if saved and username:
-        add_to_user_works(username, filename)
         set_video_published(filename, True)  # 收藏 = 发布到画廊
+    elif not saved and username:
+        # 取消收藏时：如果视频不是该用户创建的，也从作品列表里清理（修复历史脏数据）
+        metas = get_all_video_metas()
+        meta = metas.get(filename, {})
+        creator = (meta.get("username") or b"").decode("utf-8") if isinstance(meta.get("username"), bytes) else (meta.get("username") or "")
+        if creator and creator != username:
+            remove_from_user_works(username, filename)
     return success_response({"filename": filename, "saved": saved}, "已收藏" if saved else "已取消收藏")
 
 
@@ -882,8 +905,6 @@ async def api_videos_publish(filename: str, username: str = ""):
     if not _is_safe_filename(filename):
         return error_response("非法文件名")
     set_video_published(filename, True)
-    if username:
-        add_to_user_works(username, filename)
     return success_response({"filename": filename, "published": True}, "已发布")
 
 

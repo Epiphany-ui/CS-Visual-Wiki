@@ -90,12 +90,12 @@ async function loadAll() {
       } catch { /* ignore */ }
     }
 
-    // 2. Fallback: 如果 Java 没有公开作品，尝试从 Python 后端按用户名查所有作品
+    // 2. Fallback: 如果 Java 没有公开作品，尝试从 Python 后端按用户名查公开作品
     if (works.value.length === 0) {
       const tryName = usernameRef.value || (!/^\d+$/.test(param) ? param : '')
       if (tryName) {
         try {
-          const pyRes = await fetch(`/api/videos/list?my_works=true&username=${encodeURIComponent(tryName)}`)
+          const pyRes = await fetch(`/api/videos/list?my_works=true&username=${encodeURIComponent(tryName)}&published=true`)
           if (pyRes.ok) {
             const pyData = await pyRes.json()
             if (pyData.data?.items?.length > 0) {
