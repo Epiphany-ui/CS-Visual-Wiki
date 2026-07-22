@@ -325,9 +325,12 @@ function openWiki(item: StudyItem, pathId: string, chId: string) {
   activeWikiKey.value = key
   activeWikiSlug.value = item.wikiSlug
   activeWikiPrompt.value = item.prompt
-  // 展开后滚动到百科位置
+  // 展开后等待动画完成，滚动到最底部再往上收一个滚轮距离
   nextTick(() => {
-    wikiRef.value?.$el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setTimeout(() => {
+      const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+      window.scrollTo({ top: maxScroll - 200, behavior: 'smooth' })
+    }, 400)
   })
 }
 

@@ -47,7 +47,7 @@ from services.progress_service import (
     save_to_gallery, is_in_gallery, get_gallery_filenames,
     save_video_meta, get_video_meta, get_all_video_metas, update_video_title,
     add_to_user_works, remove_from_user_works, get_user_works, mark_task_cancelled,
-    backfill_save_counts,
+    backfill_save_counts, sync_video_metas_from_json,
     set_video_published, is_video_published, _get_redis, _maybe_bgsave,
 )
 from services.comment_service import (
@@ -160,6 +160,13 @@ async def startup_event():
             logger.info("[startup] 收藏数回填完成: %d 个视频", backfilled)
     except Exception:
         pass
+
+    # 从 video_meta.json 同步视频元数据到 Redis
+    try:
+        synced = sync_video_metas_from_json()
+        logger.info("[startup] 视频元数据同步完成: %d 个", synced)
+    except Exception as e:
+        logger.warning("[startup] 视频元数据同步失败: %s", e)
 
 # ===================== 请求响应模型 =====================
 class GenerateRequest(BaseModel):

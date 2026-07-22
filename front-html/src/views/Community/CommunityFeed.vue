@@ -14,8 +14,12 @@ const posts = ref<any[]>([])
 const deletingPost = ref<Set<number>>(new Set())
 const forkingPost = ref<Set<number>>(new Set())
 
+function gotoLogin() {
+  router.push('/login?redirect=' + encodeURIComponent(router.currentRoute.value.fullPath))
+}
+
 async function handleFork(post: any) {
-  if (!isLoggedIn.value) { ElMessage.warning('请先登录'); return }
+  if (!isLoggedIn.value) { gotoLogin(); return }
   forkingPost.value.add(post.id)
   try {
     const res = await fetch(`/api/v1/work/fork?workId=${post.id}`, {
@@ -118,7 +122,7 @@ async function loadPosts() {
 
 // --- 点赞 ---
 async function handleLike(post: any) {
-  if (!currentUser.value) return
+  if (!currentUser.value) { gotoLogin(); return }
   try {
     const res = await communityApi.toggleLike(post.id, currentUser.value)
     post._liked = res.data.data?.liked ?? false
@@ -157,7 +161,8 @@ async function loadComments(postId: number, limit = 50) {
 
 async function submitComment(postId: number) {
   const text = commentInputs[postId]?.trim()
-  if (!text || !currentUser.value) return
+  if (!text) return
+  if (!currentUser.value) { gotoLogin(); return }
   const reply = replyTo[postId]
   const displayText = reply ? `回复 @${reply.name}：${text}` : text
   try {
@@ -169,7 +174,7 @@ async function submitComment(postId: number) {
 }
 
 async function handleCommentLike(postId: number, commentId: string) {
-  if (!currentUser.value) return
+  if (!currentUser.value) { gotoLogin(); return }
   try {
     await communityApi.likeComment(postId, commentId, currentUser.value)
     loadComments(postId)

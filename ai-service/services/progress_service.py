@@ -168,6 +168,7 @@ def delete_video(filename: str) -> bool:
             r.srem(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
         r.delete(meta_key)
         _maybe_bgsave()
+        _remove_video_meta_from_json(filename)
     except Exception:
         pass
 
@@ -182,6 +183,7 @@ VIDEO_META_PREFIX = "cs:video"  # Redis Hash: 视频元数据 {filename} → {ti
 def save_video_meta(filename: str, title: str = "", username: str = ""):
     """保存视频元数据（标题、创建时间、发布者）
     永久持久化，不设 TTL，避免用户作品数据意外过期丢失。
+    同步写入 video_meta.json 作为磁盘备份。
     """
     try:
         r = _get_redis()
@@ -194,6 +196,7 @@ def save_video_meta(filename: str, title: str = "", username: str = ""):
         if username and username != "匿名":
             r.sadd(f"{VIDEO_META_PREFIX}:user-works:{username}", filename)
         _maybe_bgsave()
+        _flush_video_meta_to_json(filename)
     except Exception:
         pass
 
@@ -205,6 +208,7 @@ def set_video_published(filename: str, published: bool = True):
         key = f"{VIDEO_META_PREFIX}:{filename}"
         r.hset(key, "published", "1" if published else "0")
         _maybe_bgsave()
+        _flush_video_meta_to_json(filename)
     except Exception:
         pass
 
@@ -299,7 +303,9 @@ def update_video_title(filename: str, new_title: str) -> bool:
         else:
             # 如果元数据不存在，创建
             save_video_meta(filename, title=new_title)
+            return True
         _maybe_bgsave()
+        _flush_video_meta_to_json(filename)
         return True
     except Exception:
         return False
@@ -528,3 +534,131 @@ def get_task_count() -> Dict:
         state = task.get("state", "UNKNOWN")
         counts["by_state"][state] = counts["by_state"].get(state, 0) + 1
     return counts
+
+
+# ===================== video_meta.json 持久化（磁盘备份） =====================
+
+def _video_meta_json_path():
+    from pathlib import Path
+    return Path(__file__).resolve().parent.parent / "outputs" / "video_meta.json"
+
+
+def _read_video_meta_json() -> dict:
+    """读取 video_meta.json，不存在返回空 dict"""
+    path = _video_meta_json_path()
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _write_video_meta_json(data: dict):
+    """原子写入 video_meta.json"""
+    path = _video_meta_json_path()
+    tmp = path.with_suffix(".json.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp.replace(path)
+    except Exception:
+        pass
+
+
+def _flush_video_meta_to_json(filename: str):
+    """从 Redis 读取单个视频的元数据，同步写入 video_meta.json"""
+    try:
+        meta = get_video_meta(filename)
+        if not meta:
+            return
+        # 解码 bytes 值
+        clean = {}
+        for k, v in meta.items():
+            ks = k.decode("utf-8") if isinstance(k, bytes) else k
+            vs = v.decode("utf-8") if isinstance(v, bytes) else v
+            clean[ks] = vs
+        all_data = _read_video_meta_json()
+        all_data[filename] = clean
+        _write_video_meta_json(all_data)
+    except Exception:
+        pass
+
+
+def _remove_video_meta_from_json(filename: str):
+    """从 video_meta.json 中删除指定视频的元数据"""
+    try:
+        all_data = _read_video_meta_json()
+        if filename in all_data:
+            del all_data[filename]
+            _write_video_meta_json(all_data)
+    except Exception:
+        pass
+
+
+def sync_video_metas_from_json():
+    """
+    从 outputs/video_meta.json 读取视频元数据，同步写入 Redis。
+    用于服务启动时自动加载，确保磁盘文件与 Redis 一致。
+    同时重建用户作品列表（user-works）。
+    幂等操作：已存在的记录会被覆盖更新。
+    """
+    from pathlib import Path
+
+    meta_path = Path(__file__).resolve().parent.parent / "outputs" / "video_meta.json"
+    if not meta_path.exists():
+        logger = get_logger("progress")
+        logger.info("[sync_metas] video_meta.json 不存在，跳过")
+        return 0
+
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        logger = get_logger("progress")
+        logger.warning(f"[sync_metas] 读取 video_meta.json 失败: {e}")
+        return 0
+
+    if not isinstance(data, dict):
+        return 0
+
+    # 重建用户作品列表
+    user_works: dict[str, set] = {}
+
+    count = 0
+    for filename, meta in data.items():
+        if not filename.endswith(".mp4"):
+            continue
+        title = meta.get("title", "") or filename
+        username = meta.get("username", "匿名")
+        published = meta.get("published", "0")
+
+        # 写入 Redis
+        save_video_meta(filename, title=title, username=username)
+        if published == "1":
+            set_video_published(filename, True)
+
+        # 收集用户作品（用于批量重建 user-works Set）
+        if username and username != "匿名":
+            if username not in user_works:
+                user_works[username] = set()
+            user_works[username].add(filename)
+
+        count += 1
+
+    # 将收集到的用户作品列表写入 Redis（已由 save_video_meta 写入，这里仅补充日志）
+    if user_works:
+        try:
+            r = _get_redis()
+            for uname, files in user_works.items():
+                for fn in files:
+                    r.sadd(f"{VIDEO_META_PREFIX}:user-works:{uname}", fn)
+            _maybe_bgsave()
+        except Exception:
+            pass
+
+    from .logging_config import get_logger
+    logger = get_logger("progress")
+    logger.info(f"[sync_metas] 已同步 {count} 个视频元数据 + {len(user_works)} 个用户作品列表到 Redis")
+    return count
